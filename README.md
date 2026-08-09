@@ -51,36 +51,4 @@ graph TD
 
 
 
-## 💻 Usage
 
-To run the barcode scanner, execute the script:
-
-```bash
-python barcode_scanner.py
-```
-
-### Controls:
-*   **Hold a product barcode or QR code** up to your webcam.
-*   The camera feed will automatically highlight the code:
-    *   🟡 **Yellow Box**: Lookup pending (querying cascading APIs in the background).
-    *   🟢 **Green Box**: Product found and successfully resolved.
-    *   🔴 **Red Box**: Product not found in any database.
-    *   🟠 **Orange Box**: API/Network connection error occurred.
-*   Press **`q`** in the video window to stop the scanner and exit cleanly.
-
----
-
-## 📊 Scanned Log Format
-
-Successful lookups are instantly appended to `scanned_products.txt` in the root folder. Each log entry is structured as follows:
-
-```text
-[YYYY-MM-DD HH:MM:SS] Barcode: <barcode> | Status: FOUND | DbSource: <source_db> | Product: <product_name> (<brand>)
-[YYYY-MM-DD HH:MM:SS] Barcode: <barcode> | Status: NOT_FOUND | DbSource: None | Product: Product Not Found
-```
-
-Example:
-```text
-[2026-07-30 23:04:12] Barcode: 3017624010701 | Status: FOUND | DbSource: Open Food Facts | Product: Nutella (Ferrero)
-[2026-07-30 23:04:45] Barcode: 9780132350884 | Status: FOUND | DbSource: Open Library | Product: Clean Code by Robert C. Martin
-```
