@@ -4,6 +4,8 @@ import requests
 import threading
 import queue
 import time
+import re
+import html as html_parser
 from datetime import datetime
 
 # Define MockDecoded structure for OpenCV fallback matching pyzbar interface
@@ -15,11 +17,8 @@ class MockDecoded:
 
     def __init__(self, data_str, points):
         self.data = data_str.encode('utf-8')
-        
-        # points is expected to be a numpy array of shape (4, 2) or list of coordinates
         self.polygon = [self.Point(pt[0], pt[1]) for pt in points] if points is not None else []
         
-        # Calculate rect from points
         if points is not None and len(points) > 0:
             xs = [pt[0] for pt in points]
             ys = [pt[1] for pt in points]
@@ -34,7 +33,6 @@ PYZBAR_AVAILABLE = False
 try:
     import os
     import sys
-    # Add pyzbar folder to DLL directory searches on Windows (Python 3.8+)
     if sys.platform == 'win32' and sys.version_info >= (3, 8):
         import importlib.util
         spec = importlib.util.find_spec('pyzbar')
@@ -51,50 +49,131 @@ except Exception as e:
     print("For full pyzbar functionality, please ensure Microsoft Visual C++ 2013 Redistributable is installed.")
     print("-------------------------------------------------------------------------------------------------\n")
 
-def decode_frame(frame):
-    """Decodes barcodes/QR codes from a frame, using Pyzbar or falling back to OpenCV."""
+
+def is_valid_ean13(code):
+    """Validates EAN-13 barcode checksum digit."""
+    if not code.isdigit() or len(code) != 13:
+        return False
+    digits = [int(d) for d in code]
+    odd_sum = sum(digits[i] for i in range(0, 12, 2))
+    even_sum = sum(digits[i] for i in range(1, 12, 2))
+    total = odd_sum + 3 * even_sum
+    check_digit = (10 - (total % 10)) % 10
+    return check_digit == digits[12]
+
+
+def is_valid_upc(code):
+    """Validates UPC-A (12-digit) barcode checksum digit."""
+    if not code.isdigit() or len(code) != 12:
+        return False
+    digits = [int(d) for d in code]
+    odd_sum = sum(digits[i] for i in range(0, 11, 2))
+    even_sum = sum(digits[i] for i in range(1, 11, 2))
+    total = 3 * odd_sum + even_sum
+    check_digit = (10 - (total % 10)) % 10
+    return check_digit == digits[11]
+
+
+def _run_decode_on_image(image_gray):
+    """Internal helper to run barcode and QR decoders on a single-channel grayscale image."""
     if PYZBAR_AVAILABLE:
         try:
-            return pyzbar.decode(frame)
-        except Exception as e:
-            # If pyzbar fails at runtime for some reason, print warning and fallback
-            print(f"[Error] pyzbar.decode runtime error: {e}. Switching to OpenCV detectors.")
+            return pyzbar.decode(image_gray)
+        except Exception:
             pass
 
     # OpenCV Fallback
     decoded_codes = []
-    
-    # Initialize static detectors on first call
     if not hasattr(decode_frame, "barcode_detector"):
         decode_frame.barcode_detector = cv2.barcode.BarcodeDetector()
         decode_frame.qrcode_detector = cv2.QRCodeDetector()
         
     # 1. Scan for Barcodes
     try:
-        retval, decoded_info, points, _ = decode_frame.barcode_detector.detectAndDecodeMulti(frame)
+        retval, decoded_info, points, _ = decode_frame.barcode_detector.detectAndDecodeMulti(image_gray)
         if retval:
-            # If a single code is returned, points might not be nested. Normalize zip.
             if len(points.shape) == 2:
                 points = np.expand_dims(points, axis=0)
             for info, pts in zip(decoded_info, points):
-                if info.strip():
-                    decoded_codes.append(MockDecoded(info, pts))
+                info_stripped = info.strip()
+                if info_stripped:
+                    # Apply checksum validation filter for 1D codes in fallback mode to avoid misreads
+                    if info_stripped.isdigit():
+                        if len(info_stripped) == 13 and not is_valid_ean13(info_stripped):
+                            continue  # Discard corrupt EAN-13 scan
+                        elif len(info_stripped) == 12 and not is_valid_upc(info_stripped):
+                            continue  # Discard corrupt UPC-A scan
+                    decoded_codes.append(MockDecoded(info_stripped, pts))
     except Exception:
         pass
         
-    # 2. Scan for QR Codes
+    # 2. Scan for QR Codes (no checksum validation needed for QR)
     try:
-        retval, decoded_info, points, _ = decode_frame.qrcode_detector.detectAndDecodeMulti(frame)
+        retval, decoded_info, points, _ = decode_frame.qrcode_detector.detectAndDecodeMulti(image_gray)
         if retval:
             if len(points.shape) == 2:
                 points = np.expand_dims(points, axis=0)
             for info, pts in zip(decoded_info, points):
                 if info.strip():
-                    decoded_codes.append(MockDecoded(info, pts))
+                    decoded_codes.append(MockDecoded(info.strip(), pts))
     except Exception:
         pass
         
     return decoded_codes
+
+
+def decode_frame(frame):
+    """
+    Decodes barcodes/QR codes from a frame using a multi-pass image processing pipeline.
+    Enhances scanning stability under poor lighting, motion blur, and low resolution.
+    """
+    # Grayscale conversion
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    
+    # PASS 1: Standard Grayscale Frame
+    barcodes = _run_decode_on_image(gray)
+    if barcodes:
+        return barcodes
+        
+    # PASS 2: Binarization (Otsu's Thresholding for contrast)
+    try:
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        barcodes = _run_decode_on_image(thresh)
+        if barcodes:
+            return barcodes
+    except Exception:
+        pass
+        
+    # PASS 3: Image Sharpening (fixes motion blur)
+    try:
+        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+        sharpened = cv2.filter2D(gray, -1, kernel)
+        barcodes = _run_decode_on_image(sharpened)
+        if barcodes:
+            return barcodes
+    except Exception:
+        pass
+
+    # PASS 4: Upscaling (1.5x zoom for small/distant barcodes)
+    try:
+        scale = 1.5
+        upscaled = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+        barcodes = _run_decode_on_image(upscaled)
+        if barcodes:
+            # Map upscaled coordinates back to original frame size
+            for bc in barcodes:
+                if hasattr(bc, 'polygon') and bc.polygon:
+                    for pt in bc.polygon:
+                        pt.x = int(pt.x / scale)
+                        pt.y = int(pt.y / scale)
+                if hasattr(bc, 'rect') and bc.rect:
+                    rx, ry, rw, rh = bc.rect
+                    bc.rect = (int(rx / scale), int(ry / scale), int(rw / scale), int(rh / scale))
+            return barcodes
+    except Exception:
+        pass
+        
+    return []
 
 
 class BarcodeLookupManager:
@@ -125,10 +204,10 @@ class BarcodeLookupManager:
             return self.cache.get(barcode, {"status": "unknown", "name": ""})
 
     def _worker_loop(self):
-        """Worker thread loop that fetches product data and logs it."""
+        """Worker thread loop that fetches product data across multiple databases and web search fallbacks."""
         session = requests.Session()
         session.headers.update({
-            "User-Agent": "BarcodeScannerApp/1.0 (Python OpenCV/pyzbar; contact: appdeveloper@example.com)"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
         })
 
         while True:
@@ -136,39 +215,195 @@ class BarcodeLookupManager:
             if barcode is None:
                 break
 
-            url = f"https://world.openfoodfacts.org/api/v2/product/{barcode}.json?fields=product_name,brands,generic_name"
-            
-            try:
-                response = session.get(url, timeout=5)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    status = data.get("status")
-                    
-                    if status == 1:
-                        product = data.get("product", {})
-                        prod_name = product.get("product_name") or product.get("generic_name") or "Unknown Product"
-                        brand = product.get("brands")
-                        
-                        full_name = f"{prod_name} ({brand})" if brand else prod_name
-                        full_name = full_name.strip()
-                        if not full_name:
-                            full_name = "Unnamed Product"
-                            
-                        self._update_cache_and_log(barcode, "found", full_name)
-                    else:
-                        self._update_cache_and_log(barcode, "not_found", "Product Not Found")
-                else:
-                    self._update_cache_and_log(barcode, "failed", f"API Error ({response.status_code})")
-            
-            except requests.RequestException as e:
-                print(f"[Error] Network lookup failed for barcode {barcode}: {e}")
-                self._update_cache_and_log(barcode, "failed", "Network Error")
-            
-            finally:
-                self.lookup_queue.task_done()
+            product_name = None
+            source_database = None
 
-    def _update_cache_and_log(self, barcode, status, name):
+            # Generate barcode variants to maximize lookup success (e.g. pad UPC to EAN-13, or unpad EAN-13 to UPC)
+            barcodes_to_try = [barcode]
+            if len(barcode) == 12:
+                barcodes_to_try.append(f"0{barcode}")  # Try padded UPC
+            elif len(barcode) == 13 and barcode.startswith("0"):
+                barcodes_to_try.append(barcode[1:])    # Try stripped EAN
+
+            # Query databases sequentially for each barcode variant
+            for code_variant in barcodes_to_try:
+                if product_name:
+                    break
+
+                # --- STAGE 1: Try Open Food Facts API (Groceries & Food products) ---
+                try:
+                    url = f"https://world.openfoodfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
+                    response = session.get(url, timeout=3)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get("status") == 1:
+                            product = data.get("product", {})
+                            prod_name = product.get("product_name") or product.get("generic_name") or product.get("product_name_en")
+                            if prod_name and prod_name.strip():
+                                brand = product.get("brands")
+                                product_name = f"{prod_name.strip()} ({brand.strip()})" if brand and brand.strip() else prod_name.strip()
+                                source_database = "Open Food Facts"
+                                break
+                except Exception as e:
+                    print(f"[Lookup Trace] Open Food Facts error for {code_variant}: {e}")
+
+                # --- STAGE 2: Try Open Beauty Facts API (Cosmetics & Personal Care) ---
+                if not product_name:
+                    try:
+                        url = f"https://world.openbeautyfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
+                        response = session.get(url, timeout=3)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data.get("status") == 1:
+                                product = data.get("product", {})
+                                prod_name = product.get("product_name") or product.get("generic_name") or product.get("product_name_en")
+                                if prod_name and prod_name.strip():
+                                    brand = product.get("brands")
+                                    product_name = f"{prod_name.strip()} ({brand.strip()})" if brand and brand.strip() else prod_name.strip()
+                                    source_database = "Open Beauty Facts"
+                                    break
+                    except Exception as e:
+                        print(f"[Lookup Trace] Open Beauty Facts error for {code_variant}: {e}")
+
+                # --- STAGE 3: Try Open Pet Food Facts API (Pet Foods & Supplies) ---
+                if not product_name:
+                    try:
+                        url = f"https://world.openpetfoodfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
+                        response = session.get(url, timeout=3)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data.get("status") == 1:
+                                product = data.get("product", {})
+                                prod_name = product.get("product_name") or product.get("generic_name") or product.get("product_name_en")
+                                if prod_name and prod_name.strip():
+                                    brand = product.get("brands")
+                                    product_name = f"{prod_name.strip()} ({brand.strip()})" if brand and brand.strip() else prod_name.strip()
+                                    source_database = "Open Pet Food Facts"
+                                    break
+                    except Exception as e:
+                        print(f"[Lookup Trace] Open Pet Food Facts error for {code_variant}: {e}")
+
+                # --- STAGE 4: Try Open Products Facts API (Miscellaneous consumer goods) ---
+                if not product_name:
+                    try:
+                        url = f"https://world.openproductsfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
+                        response = session.get(url, timeout=3)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data.get("status") == 1:
+                                product = data.get("product", {})
+                                prod_name = product.get("product_name") or product.get("generic_name") or product.get("product_name_en")
+                                if prod_name and prod_name.strip():
+                                    brand = product.get("brands")
+                                    product_name = f"{prod_name.strip()} ({brand.strip()})" if brand and brand.strip() else prod_name.strip()
+                                    source_database = "Open Products Facts"
+                                    break
+                    except Exception as e:
+                        print(f"[Lookup Trace] Open Products Facts error for {code_variant}: {e}")
+
+                # --- STAGE 5: Try Open Library API (Books, ISBN barcode lookup) ---
+                if not product_name:
+                    try:
+                        url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{code_variant}&format=json&jscmd=data"
+                        response = session.get(url, timeout=3)
+                        if response.status_code == 200:
+                            data = response.json()
+                            key = f"ISBN:{code_variant}"
+                            if key in data:
+                                book = data[key]
+                                title = book.get("title")
+                                if title:
+                                    authors_list = book.get("authors", [])
+                                    authors = ", ".join(a.get("name") for a in authors_list if a.get("name"))
+                                    product_name = f"{title} by {authors}" if authors else title
+                                    source_database = "Open Library"
+                                    break
+                    except Exception as e:
+                        print(f"[Lookup Trace] Open Library error for {code_variant}: {e}")
+
+                # --- STAGE 6: Try UPCitemdb Trial API (General retail products: Electronics, Retail, Apparel) ---
+                if not product_name:
+                    try:
+                        url = f"https://api.upcitemdb.com/prod/trial/lookup?upc={code_variant}"
+                        response = session.get(url, timeout=3)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data.get("code") == "OK" and data.get("total", 0) > 0:
+                                items = data.get("items", [])
+                                if items:
+                                    item = items[0]
+                                    title = item.get("title")
+                                    brand = item.get("brand")
+                                    if title and title.strip():
+                                        product_name = f"{title.strip()} ({brand.strip()})" if brand and brand.strip() else title.strip()
+                                        source_database = "UPCitemdb"
+                                        break
+                    except Exception as e:
+                        print(f"[Lookup Trace] UPCitemdb error for {code_variant}: {e}")
+
+                # --- STAGE 7: Try DuckDuckGo HTML Search Scraper (Global fallback for any indexed barcode) ---
+                if not product_name:
+                    try:
+                        url = f"https://html.duckduckgo.com/html/?q={code_variant}"
+                        response = session.get(url, timeout=4)
+                        if response.status_code == 200:
+                            titles = re.findall(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', response.text, re.DOTALL)
+                            snippets = re.findall(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', response.text, re.DOTALL)
+                            
+                            ignore_keywords = [
+                                "barcode lookup", "upc lookup", "ean lookup", "barcode search", 
+                                "upc search", "ean search", "barcode database", "product database",
+                                "search by barcode", "what is this barcode", "barcode detail", "lookup barcode",
+                                "barcode locator", "ean-db"
+                            ]
+                            
+                            candidates = []
+                            
+                            for title, snippet in zip(titles, snippets):
+                                clean_title = re.sub(r'<[^>]+>', '', title).strip()
+                                clean_title = html_parser.unescape(clean_title)
+                                
+                                clean_snippet = re.sub(r'<[^>]+>', '', snippet).strip()
+                                clean_snippet = html_parser.unescape(clean_snippet)
+                                
+                                title_lower = clean_title.lower()
+                                if any(kw in title_lower for kw in ignore_keywords):
+                                    continue
+                                    
+                                suffixes_to_remove = [
+                                    " - eBay", " | eBay", " - Amazon", " | Amazon", " - Walmart", " | Walmart",
+                                    " - Flipkart", " | Flipkart", " - BigBasket", " | BigBasket"
+                                ]
+                                for suffix in suffixes_to_remove:
+                                    if clean_title.endswith(suffix):
+                                        clean_title = clean_title[:-len(suffix)]
+                                    elif clean_title.lower().endswith(suffix.lower()):
+                                        clean_title = clean_title[:-len(suffix)]
+                                        
+                                clean_title = re.sub(r'\s+', ' ', clean_title).strip()
+                                
+                                if code_variant in clean_title or code_variant in clean_snippet:
+                                    candidates.append((0, clean_title))
+                                elif len(clean_title) > 5 and not clean_title.replace('.', '', 1).isdigit():
+                                    candidates.append((1, clean_title))
+                                    
+                            if candidates:
+                                candidates.sort(key=lambda x: x[0])
+                                product_name = candidates[0][1]
+                                source_database = "Web Search (DDG)"
+                                break
+                    except Exception as e:
+                        print(f"[Lookup Trace] DuckDuckGo fallback error for {code_variant}: {e}")
+
+            # --- Final Status Allocation ---
+            if product_name:
+                self._update_cache_and_log(barcode, "found", product_name, source_database)
+            else:
+                self._update_cache_and_log(barcode, "not_found", "Product Not Found", "None")
+
+            self.lookup_queue.task_done()
+
+    def _update_cache_and_log(self, barcode, status, name, source):
         """Helper to thread-safely update cache and write scanner log file."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self.lock:
@@ -178,7 +413,7 @@ class BarcodeLookupManager:
                 "timestamp": timestamp
             }
         
-        log_entry = f"[{timestamp}] Barcode: {barcode} | Status: {status.upper()} | Product: {name}\n"
+        log_entry = f"[{timestamp}] Barcode: {barcode} | Status: {status.upper()} | DbSource: {source} | Product: {name}\n"
         
         try:
             with open(self.log_filename, "a", encoding="utf-8") as f:
@@ -260,7 +495,7 @@ def draw_barcode_overlay(frame, barcode, status_info):
 def main():
     print("====================================================")
     print("   Webcam Barcode & QR Code Scanner starting...     ")
-    print("   Lookup API: Open Food Facts (No Key Required)    ")
+    print("   7-Stage Cascading Lookups: OFF/OBF/OPF/OPPF/OL/UPC/Web ")
     print("====================================================")
     print(f"Decoder Engine: {'Pyzbar (Primary)' if PYZBAR_AVAILABLE else 'OpenCV (Fallback)'}")
     print("Press 'q' inside the webcam window to exit.\n")
@@ -274,8 +509,9 @@ def main():
         lookup_manager.shutdown()
         return
 
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    # Using 640x480 for faster real-time frame processing
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
     try:
         while True:
@@ -285,7 +521,6 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            # Decode barcodes/QR codes from the frame
             barcodes = decode_frame(frame)
 
             for barcode in barcodes:
@@ -294,7 +529,6 @@ def main():
                 status_info = lookup_manager.get_status(barcode_data)
                 draw_barcode_overlay(frame, barcode, status_info)
 
-            # Display instruction text on the window
             engine_str = "Pyzbar Engine" if PYZBAR_AVAILABLE else "OpenCV Engine"
             instruction_text = f"Press 'q' to Quit | {engine_str} active | Logs in scanned_products.txt"
             cv2.putText(frame, instruction_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
