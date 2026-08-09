@@ -49,49 +49,7 @@ graph TD
 
 ---
 
-## 🚀 Installation & Setup
 
-### 1. Prerequisites
-
-The decoding engine is powered by **ZBar**. You must ensure the ZBar shared library is installed on your operating system:
-
-*   **Windows**: The `pyzbar` library automatically installs ZBar DLLs within its Python wheel. No manual steps are required. (If DLL error occurs, please install Visual C++ Redistributable 2013).
-*   **macOS**: Install ZBar using Homebrew:
-    ```bash
-    brew install zbar
-    ```
-*   **Linux (Ubuntu/Debian)**: Install the ZBar package:
-    ```bash
-    sudo apt-get install libzbar0
-    ```
-
-### 2. Setup Project Environment
-
-Clone or download this repository, and navigate into the folder:
-
-```bash
-cd "Bar code reader"
-```
-
-Create a virtual environment (recommended):
-
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# macOS / Linux
-python3 -m venv venv
-source venv/bin/activate
-```
-
-Install python dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
----
 
 ## 💻 Usage
 
