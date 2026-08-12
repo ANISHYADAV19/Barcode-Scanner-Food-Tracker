@@ -9,6 +9,7 @@ Designed with a **non-blocking asynchronous architecture**, the video feed remai
 ## 🌟 Key Features
 
 *   📷 **Real-time Detection**: Captures and processes webcam frames instantly using OpenCV.
+*   🎯 **Dedicated Scan Window**: A centred targeting rectangle marks exactly where to hold the product. Everything outside it is dimmed and **not decoded at all**, so background clutter can never produce a false read — and because only the small window is processed, each frame is decoded at a much higher effective zoom, which is what lets small printed barcodes resolve. Resizable live with `+`/`-`.
 *   ⚡ **Zero-Lag Interface**: Multi-threaded request worker scans and queries in the background, preventing video frame stutter.
 *   🌐 **7-Stage Cascading Multi-API Lookup**: Queries multiple databases sequentially to resolve food, books, personal care, pet items, toys, and general retail goods:
     1.  **Open Food Facts API**: For groceries and food products.
@@ -102,13 +103,27 @@ python barcode_scanner.py
 ```
 
 ### Controls:
-*   **Hold a product barcode or QR code** up to your webcam.
-*   The camera feed will automatically highlight the code:
-    *   🟡 **Yellow Box**: Lookup pending (querying cascading APIs in the background).
-    *   🟢 **Green Box**: Product found and successfully resolved.
-    *   🔴 **Red Box**: Product not found in any database.
-    *   🟠 **Orange Box**: API/Network connection error occurred.
-*   Press **`q`** in the video window to stop the scanner and exit cleanly.
+
+**Hold the product so its barcode sits inside the on-screen rectangle.** Only that window is decoded — the dimmed area around it is ignored.
+
+| Key | Action |
+| :-- | :-- |
+| `+` / `-` | Grow / shrink the scan window |
+| `F` | Toggle full-frame scanning (decode the whole camera view) |
+| `R` | Reset the scan window to its default size |
+| `Q` or `Esc` | Quit cleanly |
+
+The rectangle itself is colour-coded by lookup status, and a badge above the detected code shows the number and resolved product name:
+
+*   ⚪ **Grey**: Idle — waiting for a code inside the window.
+*   🟡 **Yellow**: Lookup pending (querying cascading APIs in the background).
+*   🟢 **Green**: Product found and successfully resolved.
+*   🔴 **Red**: Product not found in any database.
+*   🟠 **Orange**: API/Network connection error occurred.
+
+The last successful read stays on the bottom result bar for a few seconds, so the details remain readable after you move the product away from the window.
+
+> **Tip:** If a barcode won't read, shrink the window with `-` so the code fills more of it. Only the window is processed, so a tighter box means a higher effective zoom for the decoder — small or distant codes read best when they span most of the box width.
 
 ---
 

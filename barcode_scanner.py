@@ -8,6 +8,22 @@ import re
 import html as html_parser
 from datetime import datetime
 
+# --- Scanner viewfinder configuration ---
+# Only the region inside the centred rectangle is decoded. A small, explicit
+# search window makes aiming obvious for the user, keeps background clutter out
+# of the decoder, and lets each frame be processed at a higher effective zoom.
+ROI_W_RATIO = 0.70            # scan window width as a fraction of the frame
+ROI_H_RATIO = 0.34            # scan window height as a fraction of the frame
+ROI_MIN_W, ROI_MAX_W = 0.25, 0.96
+ROI_MIN_H, ROI_MAX_H = 0.12, 0.90
+DIM_ALPHA = 0.35              # brightness of the area outside the scan window
+RESULT_HOLD_SECONDS = 6.0     # how long the last hit stays on the result bar
+DECODE_TARGET_WIDTH = 1000    # upscale pass aims for this width in pixels
+CAPTURE_WIDTH, CAPTURE_HEIGHT = 1280, 720
+TOP_BANNER_H = 30             # height of the controls bar
+BOTTOM_BANNER_H = 34          # height of the result bar
+
+
 # Define MockDecoded structure for OpenCV fallback matching pyzbar interface
 class MockDecoded:
     class Point:
@@ -74,38 +90,98 @@ def is_valid_upc(code):
     return check_digit == digits[11]
 
 
+def get_roi_rect(frame_shape, w_ratio=ROI_W_RATIO, h_ratio=ROI_H_RATIO):
+    """Returns the centred scan window as (x, y, w, h) for a given frame shape."""
+    frame_h, frame_w = frame_shape[:2]
+    roi_w = max(16, int(frame_w * w_ratio))
+    roi_h = max(16, int(frame_h * h_ratio))
+    roi_x = (frame_w - roi_w) // 2
+    roi_y = (frame_h - roi_h) // 2
+    return roi_x, roi_y, roi_w, roi_h
+
+
+def _to_mutable(decoded):
+    """
+    Normalises any decoder result into a mutable MockDecoded.
+
+    pyzbar returns immutable namedtuples, so its coordinates cannot be shifted or
+    rescaled in place. Converting up front lets the ROI offset and upscale passes
+    map their coordinates back onto the full camera frame.
+    """
+    if isinstance(decoded, MockDecoded):
+        return decoded
+
+    data_str = decoded.data.decode("utf-8", errors="replace")
+    polygon = getattr(decoded, "polygon", None)
+
+    if polygon:
+        points = [(pt.x, pt.y) for pt in polygon]
+    else:
+        rect = decoded.rect
+        left, top, width, height = rect[0], rect[1], rect[2], rect[3]
+        points = [
+            (left, top),
+            (left + width, top),
+            (left + width, top + height),
+            (left, top + height),
+        ]
+
+    return MockDecoded(data_str, points)
+
+
+def _remap_barcodes(barcodes, scale=1.0, offset_x=0, offset_y=0):
+    """Maps decoded coordinates back onto the original frame (undo upscale, then add ROI offset)."""
+    for barcode in barcodes:
+        for pt in barcode.polygon:
+            pt.x = int(pt.x / scale) + offset_x
+            pt.y = int(pt.y / scale) + offset_y
+
+        rx, ry, rw, rh = barcode.rect
+        barcode.rect = (
+            int(rx / scale) + offset_x,
+            int(ry / scale) + offset_y,
+            int(rw / scale),
+            int(rh / scale),
+        )
+    return barcodes
+
+
 def _run_decode_on_image(image_gray):
     """Internal helper to run barcode and QR decoders on a single-channel grayscale image."""
     if PYZBAR_AVAILABLE:
         try:
-            return pyzbar.decode(image_gray)
+            return [_to_mutable(d) for d in pyzbar.decode(image_gray)]
         except Exception:
             pass
 
     # OpenCV Fallback
     decoded_codes = []
     if not hasattr(decode_frame, "barcode_detector"):
-        decode_frame.barcode_detector = cv2.barcode.BarcodeDetector()
+        try:
+            decode_frame.barcode_detector = cv2.barcode.BarcodeDetector()
+        except Exception:
+            decode_frame.barcode_detector = None
         decode_frame.qrcode_detector = cv2.QRCodeDetector()
-        
-    # 1. Scan for Barcodes
-    try:
-        retval, decoded_info, points, _ = decode_frame.barcode_detector.detectAndDecodeMulti(image_gray)
-        if retval:
-            if len(points.shape) == 2:
-                points = np.expand_dims(points, axis=0)
-            for info, pts in zip(decoded_info, points):
-                info_stripped = info.strip()
-                if info_stripped:
-                    # Apply checksum validation filter for 1D codes in fallback mode to avoid misreads
-                    if info_stripped.isdigit():
-                        if len(info_stripped) == 13 and not is_valid_ean13(info_stripped):
-                            continue  # Discard corrupt EAN-13 scan
-                        elif len(info_stripped) == 12 and not is_valid_upc(info_stripped):
-                            continue  # Discard corrupt UPC-A scan
-                    decoded_codes.append(MockDecoded(info_stripped, pts))
-    except Exception:
-        pass
+
+    # 1. Scan for Barcodes (skipped when this OpenCV build ships no barcode module)
+    if decode_frame.barcode_detector is not None:
+        try:
+            retval, decoded_info, points, _ = decode_frame.barcode_detector.detectAndDecodeMulti(image_gray)
+            if retval:
+                if len(points.shape) == 2:
+                    points = np.expand_dims(points, axis=0)
+                for info, pts in zip(decoded_info, points):
+                    info_stripped = info.strip()
+                    if info_stripped:
+                        # Apply checksum validation filter for 1D codes in fallback mode to avoid misreads
+                        if info_stripped.isdigit():
+                            if len(info_stripped) == 13 and not is_valid_ean13(info_stripped):
+                                continue  # Discard corrupt EAN-13 scan
+                            elif len(info_stripped) == 12 and not is_valid_upc(info_stripped):
+                                continue  # Discard corrupt UPC-A scan
+                        decoded_codes.append(MockDecoded(info_stripped, pts))
+        except Exception:
+            pass
         
     # 2. Scan for QR Codes (no checksum validation needed for QR)
     try:
@@ -122,19 +198,17 @@ def _run_decode_on_image(image_gray):
     return decoded_codes
 
 
-def decode_frame(frame):
+def _decode_multipass(gray):
     """
-    Decodes barcodes/QR codes from a frame using a multi-pass image processing pipeline.
+    Runs the multi-pass image processing pipeline over a grayscale image.
     Enhances scanning stability under poor lighting, motion blur, and low resolution.
+    Coordinates are returned in the coordinate space of the image passed in.
     """
-    # Grayscale conversion
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    
     # PASS 1: Standard Grayscale Frame
     barcodes = _run_decode_on_image(gray)
     if barcodes:
         return barcodes
-        
+
     # PASS 2: Binarization (Otsu's Thresholding for contrast)
     try:
         _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
@@ -143,7 +217,7 @@ def decode_frame(frame):
             return barcodes
     except Exception:
         pass
-        
+
     # PASS 3: Image Sharpening (fixes motion blur)
     try:
         kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
@@ -154,26 +228,47 @@ def decode_frame(frame):
     except Exception:
         pass
 
-    # PASS 4: Upscaling (1.5x zoom for small/distant barcodes)
+    # PASS 4: Upscaling (zoom for small/distant barcodes). The scale adapts to the
+    # image width, so a tightly cropped scan window gets the zoom it needs.
     try:
-        scale = 1.5
+        scale = min(3.0, max(1.5, DECODE_TARGET_WIDTH / float(gray.shape[1])))
         upscaled = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         barcodes = _run_decode_on_image(upscaled)
         if barcodes:
-            # Map upscaled coordinates back to original frame size
-            for bc in barcodes:
-                if hasattr(bc, 'polygon') and bc.polygon:
-                    for pt in bc.polygon:
-                        pt.x = int(pt.x / scale)
-                        pt.y = int(pt.y / scale)
-                if hasattr(bc, 'rect') and bc.rect:
-                    rx, ry, rw, rh = bc.rect
-                    bc.rect = (int(rx / scale), int(ry / scale), int(rw / scale), int(rh / scale))
-            return barcodes
+            return _remap_barcodes(barcodes, scale=scale)
     except Exception:
         pass
-        
+
     return []
+
+
+def decode_frame(frame, roi=None):
+    """
+    Decodes barcodes/QR codes from a frame.
+
+    When `roi` is given as (x, y, w, h), only that scan window is decoded and the
+    results are shifted back into full-frame coordinates. Cropping keeps background
+    clutter out of the decoder and makes every pass cheaper, so the scan window can
+    be processed at a higher zoom than the whole frame could afford.
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    if roi is None:
+        return _decode_multipass(gray)
+
+    frame_h, frame_w = gray.shape[:2]
+    roi_x, roi_y, roi_w, roi_h = roi
+    roi_x = max(0, min(roi_x, frame_w - 1))
+    roi_y = max(0, min(roi_y, frame_h - 1))
+    roi_w = max(1, min(roi_w, frame_w - roi_x))
+    roi_h = max(1, min(roi_h, frame_h - roi_y))
+
+    cropped = gray[roi_y:roi_y + roi_h, roi_x:roi_x + roi_w]
+    if cropped.size == 0:
+        return []
+
+    barcodes = _decode_multipass(cropped)
+    return _remap_barcodes(barcodes, offset_x=roi_x, offset_y=roi_y)
 
 
 class BarcodeLookupManager:
@@ -428,20 +523,23 @@ class BarcodeLookupManager:
         self.worker_thread.join(timeout=2)
 
 
+STATE_COLORS = {
+    "idle": (210, 210, 210),     # Light grey
+    "pending": (0, 255, 255),    # Yellow
+    "found": (0, 255, 0),        # Green
+    "not_found": (0, 0, 255),    # Red
+    "failed": (0, 165, 255),     # Orange
+    "unknown": (255, 255, 255),  # White
+}
+
+
 def draw_barcode_overlay(frame, barcode, status_info):
     """Draws a custom overlay around the scanned barcode and displays the product name."""
     status = status_info.get("status", "unknown")
     product_name = status_info.get("name", "")
     barcode_data = barcode.data.decode("utf-8")
 
-    colors = {
-        "pending": (0, 255, 255),    # Yellow
-        "found": (0, 255, 0),        # Green
-        "not_found": (0, 0, 255),    # Red
-        "failed": (0, 165, 255),     # Orange
-        "unknown": (255, 255, 255)   # White
-    }
-    color = colors.get(status, colors["unknown"])
+    color = STATE_COLORS.get(status, STATE_COLORS["unknown"])
 
     polygon = barcode.polygon
     if polygon and len(polygon) > 0:
@@ -476,8 +574,13 @@ def draw_barcode_overlay(frame, barcode, status_info):
     box_width = max(text_widths) + (padding * 2)
     box_height = (len(labels) * line_spacing) + (padding * 2) - 4
 
-    box_x = max(10, x)
-    box_y = max(box_height + 10, y - 15)
+    # Keep the badge fully on screen: a code near the right edge of the scan window
+    # would otherwise push its label off-frame, and one near the top would collide
+    # with the controls banner.
+    frame_h, frame_w = frame.shape[:2]
+    box_x = max(10, min(x, frame_w - box_width - 10))
+    box_y = max(box_height + TOP_BANNER_H + 4, y - 15)
+    box_y = min(box_y, frame_h - 10)
 
     overlay = frame.copy()
     cv2.rectangle(overlay, (box_x, box_y - box_height), (box_x + box_width, box_y), (30, 30, 30), cv2.FILLED)
@@ -492,13 +595,89 @@ def draw_barcode_overlay(frame, barcode, status_info):
         cv2.putText(frame, label, (box_x + padding, text_y), font, font_scale, label_color, thickness, cv2.LINE_AA)
 
 
+def draw_scanner_window(frame, roi, state="idle", tick=0):
+    """
+    Draws the dedicated scan window: everything outside it is dimmed, the corners get
+    bracket marks, and an animated sweep line shows the scanner is live. The rectangle
+    marks exactly the area the decoder looks at, so aligning a product inside it is
+    what makes a read succeed.
+    """
+    x, y, w, h = roi
+    color = STATE_COLORS.get(state, STATE_COLORS["idle"])
+
+    # Dim everything outside the scan window, then restore the window itself
+    dimmed = cv2.convertScaleAbs(frame, alpha=DIM_ALPHA)
+    dimmed[y:y + h, x:x + w] = frame[y:y + h, x:x + w]
+    frame[:] = dimmed
+
+    # Thin full guide rectangle
+    cv2.rectangle(frame, (x, y), (x + w - 1, y + h - 1), color, 1)
+
+    # Heavy corner brackets
+    bracket = max(18, min(w, h) // 5)
+    thickness = 4
+    corners = (
+        ((x, y), 1, 1),
+        ((x + w - 1, y), -1, 1),
+        ((x, y + h - 1), 1, -1),
+        ((x + w - 1, y + h - 1), -1, -1),
+    )
+    for (cx, cy), dx, dy in corners:
+        cv2.line(frame, (cx, cy), (cx + dx * bracket, cy), color, thickness)
+        cv2.line(frame, (cx, cy), (cx, cy + dy * bracket), color, thickness)
+
+    # Animated ping-pong sweep line while waiting for / resolving a code
+    if state in ("idle", "pending"):
+        period = 55
+        phase = (tick % (period * 2)) / float(period)
+        progress = phase if phase <= 1.0 else 2.0 - phase
+        line_y = int(y + 6 + progress * max(1, h - 12))
+        cv2.line(frame, (x + 5, line_y), (x + w - 6, line_y), (60, 60, 255), 2)
+
+    # Caption under the window
+    caption = "Align the barcode inside this box"
+    (tw, _), _ = cv2.getTextSize(caption, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
+    caption_x = x + max(0, (w - tw) // 2)
+    caption_y = min(frame.shape[0] - 8, y + h + 26)
+    cv2.putText(frame, caption, (caption_x, caption_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, color, 1, cv2.LINE_AA)
+
+
+def _fit_text(text, max_width, font_scale=0.55, thickness=1):
+    """Truncates text with an ellipsis so it fits inside max_width pixels."""
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    if cv2.getTextSize(text, font, font_scale, thickness)[0][0] <= max_width:
+        return text
+
+    trimmed = text
+    while trimmed and cv2.getTextSize(trimmed + "...", font, font_scale, thickness)[0][0] > max_width:
+        trimmed = trimmed[:-1]
+    return trimmed + "..."
+
+
+def draw_banner(frame, text, top, height, text_color, alpha=0.65):
+    """Draws a translucent full-width bar with a single line of text."""
+    frame_h, frame_w = frame.shape[:2]
+    top = max(0, min(top, frame_h - height))
+
+    overlay = frame.copy()
+    cv2.rectangle(overlay, (0, top), (frame_w, top + height), (28, 28, 28), cv2.FILLED)
+    cv2.addWeighted(overlay, alpha, frame, 1 - alpha, 0, frame)
+
+    label = _fit_text(text, frame_w - 28)
+    baseline = top + height - (height - 12) // 2 - 2
+    cv2.putText(frame, label, (14, baseline),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, text_color, 1, cv2.LINE_AA)
+
+
 def main():
     print("====================================================")
     print("   Webcam Barcode & QR Code Scanner starting...     ")
     print("   7-Stage Cascading Lookups: OFF/OBF/OPF/OPPF/OL/UPC/Web ")
     print("====================================================")
     print(f"Decoder Engine: {'Pyzbar (Primary)' if PYZBAR_AVAILABLE else 'OpenCV (Fallback)'}")
-    print("Press 'q' inside the webcam window to exit.\n")
+    print("Hold the product so its barcode sits inside the on-screen box.")
+    print("Controls:  [Q] quit   [+/-] resize box   [F] toggle full-frame   [R] reset box\n")
 
     lookup_manager = BarcodeLookupManager()
     cap = cv2.VideoCapture(0)
@@ -509,9 +688,17 @@ def main():
         lookup_manager.shutdown()
         return
 
-    # Using 640x480 for faster real-time frame processing
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    # Request 720p: only the scan window is decoded, so the extra detail is
+    # affordable and it is what lets small printed barcodes resolve.
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAPTURE_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAPTURE_HEIGHT)
+    print(f"Camera resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+
+    w_ratio, h_ratio = ROI_W_RATIO, ROI_H_RATIO
+    scan_whole_frame = False
+    tick = 0
+    last_code = None
+    last_seen = 0.0
 
     try:
         while True:
@@ -521,23 +708,61 @@ def main():
                 time.sleep(0.1)
                 continue
 
-            barcodes = decode_frame(frame)
+            tick += 1
+            roi = None if scan_whole_frame else get_roi_rect(frame.shape, w_ratio, h_ratio)
 
+            # Decode from the untouched frame, before any overlay is painted on it
+            barcodes = decode_frame(frame, roi)
+
+            detections = []
             for barcode in barcodes:
                 barcode_data = barcode.data.decode("utf-8")
                 lookup_manager.request_lookup(barcode_data)
-                status_info = lookup_manager.get_status(barcode_data)
+                detections.append((barcode, lookup_manager.get_status(barcode_data)))
+                last_code = barcode_data
+                last_seen = time.monotonic()
+
+            # The scan window is tinted by the current hit so the box itself reports state
+            state = detections[0][1].get("status", "unknown") if detections else "idle"
+            if roi is not None:
+                draw_scanner_window(frame, roi, state, tick)
+
+            for barcode, status_info in detections:
                 draw_barcode_overlay(frame, barcode, status_info)
 
-            engine_str = "Pyzbar Engine" if PYZBAR_AVAILABLE else "OpenCV Engine"
-            instruction_text = f"Press 'q' to Quit | {engine_str} active | Logs in scanned_products.txt"
-            cv2.putText(frame, instruction_text, (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+            engine_str = "Pyzbar" if PYZBAR_AVAILABLE else "OpenCV"
+            mode_str = "FULL FRAME" if scan_whole_frame else f"BOX {int(w_ratio * 100)}%x{int(h_ratio * 100)}%"
+            draw_banner(frame, f"[Q] Quit  [+/-] Box size  [F] Full frame  [R] Reset  |  {engine_str}  |  {mode_str}",
+                        0, TOP_BANNER_H, (0, 255, 0))
+
+            # Keep the last hit on screen briefly so its details stay readable
+            # after the product has been moved away from the window
+            if last_code and (time.monotonic() - last_seen) < RESULT_HOLD_SECONDS:
+                info = lookup_manager.get_status(last_code)
+                result_text = f"{last_code}  ->  {info.get('name', '')}"
+                result_color = STATE_COLORS.get(info.get("status", "unknown"), STATE_COLORS["unknown"])
+            else:
+                result_text = ("No code yet - point the camera at a barcode" if scan_whole_frame
+                               else "No code yet - hold a barcode inside the box")
+                result_color = STATE_COLORS["idle"]
+            draw_banner(frame, result_text, frame.shape[0] - BOTTOM_BANNER_H, BOTTOM_BANNER_H, result_color)
 
             cv2.imshow("Smart Barcode & QR Reader", frame)
 
-            if cv2.waitKey(1) & 0xFF == ord('q'):
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord('q'), 27):
                 print("Exit signal received. Shutting down...")
                 break
+            elif key in (ord('+'), ord('=')):
+                w_ratio = min(ROI_MAX_W, w_ratio + 0.05)
+                h_ratio = min(ROI_MAX_H, h_ratio + 0.04)
+            elif key in (ord('-'), ord('_')):
+                w_ratio = max(ROI_MIN_W, w_ratio - 0.05)
+                h_ratio = max(ROI_MIN_H, h_ratio - 0.04)
+            elif key == ord('f'):
+                scan_whole_frame = not scan_whole_frame
+            elif key == ord('r'):
+                w_ratio, h_ratio = ROI_W_RATIO, ROI_H_RATIO
 
     except KeyboardInterrupt:
         print("\nInterrupted by user. Shutting down...")
