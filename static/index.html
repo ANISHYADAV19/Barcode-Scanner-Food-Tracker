@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Barcode & QR Code Food Tracker</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="/app.css">
+  <!-- html5-qrcode Library from CDN -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M3 5h2M3 9h3M3 13h1M3 17h3M3 21h2M21 5h-2M18 9h3M20 13h1M18 17h3M21 21h-2M14 5h-4v16h4V5zM7 5h1v16H7V5zM17 5h1v16h-1V5z" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>NutriScan <span>PRO</span></h1>
+      </div>
+      <p class="subtitle">7-Stage Cascading Multi-API Barcode Lookup & Tracker</p>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="app-container">
+    <!-- Left Column: Scanner -->
+    <section class="scanner-section">
+      <div class="card glass-card">
+        <div class="card-header">
+          <div class="header-title">
+            <span class="pulse-indicator"></span>
+            <h2>Live Camera Viewfinder</h2>
+          </div>
+          <div class="camera-controls">
+            <select id="camera-select" class="styled-select" aria-label="Select Camera">
+              <option value="">Detecting cameras...</option>
+            </select>
+            <button id="toggle-camera-btn" class="btn btn-primary">Start Camera</button>
+          </div>
+        </div>
+
+        <!-- Scanner Viewfinder Wrapper -->
+        <div class="viewfinder-container">
+          <div id="reader"></div>
+          
+          <!-- Custom Viewfinder Overlay (drawn on top of the video) -->
+          <div class="custom-viewfinder" id="custom-viewfinder">
+            <div class="corner-bracket top-left"></div>
+            <div class="corner-bracket top-right"></div>
+            <div class="corner-bracket bottom-left"></div>
+            <div class="corner-bracket bottom-right"></div>
+            <div class="laser-line"></div>
+            <div class="scan-instructions-overlay">
+              <p>Align barcode inside brackets</p>
+            </div>
+          </div>
+          
+          <!-- Scanner Status Overlay (e.g. looking up...) -->
+          <div class="scanner-status-overlay" id="status-overlay">
+            <div class="spinner"></div>
+            <p id="status-overlay-text">Looking up product...</p>
+          </div>
+        </div>
+
+        <!-- Manual Input and controls -->
+        <div class="scanner-footer">
+          <div class="manual-input-group">
+            <label for="manual-barcode">Or Enter Barcode Manually</label>
+            <div class="input-with-btn">
+              <input type="text" id="manual-barcode" placeholder="e.g. 3017624010701" autocomplete="off">
+              <button id="manual-lookup-btn" class="btn btn-secondary">Lookup</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Product Detail & History -->
+    <section class="details-section">
+      <!-- Detail Card (Initially hidden) -->
+      <div id="product-detail-card" class="card glass-card detail-card hidden">
+        <div class="detail-back-bar">
+          <button id="back-to-history-btn" class="btn-text">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="arrow-icon">
+              <line x1="19" y1="12" x2="5" y2="12"></line>
+              <polyline points="12 19 5 12 12 5"></polyline>
+            </svg>
+            Back to Recent Scans
+          </button>
+          <span class="source-badge" id="product-source-badge">Open Food Facts</span>
+        </div>
+
+        <div class="product-main-info">
+          <div class="product-image-container">
+            <img id="product-image" src="" alt="Product Image" class="product-image">
+            <div id="product-image-fallback" class="product-image-fallback">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" stroke-linejoin="round"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96" stroke-linejoin="round"/>
+                <line x1="12" y1="22.08" x2="12" y2="12" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="product-title-area">
+            <h2 id="product-name" class="product-name">Product Name</h2>
+            <p id="product-brand" class="product-brand">Brand Name</p>
+            <p id="product-barcode" class="product-barcode-label">Barcode: 3017624010701</p>
+            <div class="badges-row">
+              <div id="nutriscore-badge" class="badge-nutriscore hidden">Nutri-Score <span id="nutriscore-letter">A</span></div>
+              <div id="nova-badge" class="badge-nova hidden">NOVA Group <span id="nova-number">1</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Product Extra Metadata -->
+        <div class="metadata-grid">
+          <div class="metadata-item">
+            <span class="meta-label">Quantity</span>
+            <span class="meta-val" id="product-quantity">-</span>
+          </div>
+          <div class="metadata-item">
+            <span class="meta-label">Serving Size</span>
+            <span class="meta-val" id="product-serving">-</span>
+          </div>
+          <div class="metadata-item col-span-2">
+            <span class="meta-label">Categories</span>
+            <span class="meta-val" id="product-categories">-</span>
+          </div>
+        </div>
+
+        <!-- Nutrition Facts Panel -->
+        <div id="nutrition-panel" class="nutrition-panel">
+          <h3>Nutritional Values per 100g</h3>
+          <div class="nutrition-grid">
+            <!-- Energy -->
+            <div class="nutrient-row" id="nutr-kcal">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Energy (Calories)</span>
+                <span class="nutrient-value" id="val-kcal">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-kcal" style="width: 0%"></div></div>
+            </div>
+            <!-- Fat -->
+            <div class="nutrient-row" id="nutr-fat">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Total Fat</span>
+                <span class="nutrient-value" id="val-fat">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-fat" style="width: 0%"></div></div>
+            </div>
+            <!-- Saturated Fat -->
+            <div class="nutrient-row" id="nutr-sat_fat">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Saturated Fat</span>
+                <span class="nutrient-value" id="val-sat_fat">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-sat_fat" style="width: 0%"></div></div>
+            </div>
+            <!-- Carbs -->
+            <div class="nutrient-row" id="nutr-carbs">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Carbohydrates</span>
+                <span class="nutrient-value" id="val-carbs">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-carbs" style="width: 0%"></div></div>
+            </div>
+            <!-- Sugars -->
+            <div class="nutrient-row" id="nutr-sugars">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Sugars</span>
+                <span class="nutrient-value" id="val-sugars">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-sugars" style="width: 0%"></div></div>
+            </div>
+            <!-- Fiber -->
+            <div class="nutrient-row" id="nutr-fiber">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Dietary Fiber</span>
+                <span class="nutrient-value" id="val-fiber">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-fiber" style="width: 0%"></div></div>
+            </div>
+            <!-- Proteins -->
+            <div class="nutrient-row" id="nutr-proteins">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Proteins</span>
+                <span class="nutrient-value" id="val-proteins">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-proteins" style="width: 0%"></div></div>
+            </div>
+            <!-- Salt -->
+            <div class="nutrient-row" id="nutr-salt">
+              <div class="nutrient-info">
+                <span class="nutrient-name">Salt</span>
+                <span class="nutrient-value" id="val-salt">-</span>
+              </div>
+              <div class="progress-bar-bg"><div class="progress-bar" id="bar-salt" style="width: 0%"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="no-nutrition-message" class="info-banner hidden">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="banner-icon">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <p>No nutritional metrics are available for this item (common for books, general retail goods, and web searches).</p>
+        </div>
+
+        <!-- Allergens Section -->
+        <div id="allergens-container" class="allergens-panel hidden">
+          <h3>Allergen Alerts</h3>
+          <div class="allergens-tags" id="allergens-tags-list">
+            <!-- Dynamic tags -->
+          </div>
+        </div>
+      </div>
+
+      <!-- History Card / Landing State -->
+      <div id="history-card" class="card glass-card history-card">
+        <div class="card-header">
+          <h2>Recent Scans</h2>
+          <button id="refresh-history-btn" class="btn btn-icon" title="Refresh History" aria-label="Refresh History">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="refresh-icon">
+              <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 11-.57-8.38l5.67-5.67"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Scanning instructions (landing placeholder) -->
+        <div class="scanning-tip-banner" id="scanning-tip">
+          <div class="tip-icon">💡</div>
+          <div class="tip-content">
+            <h4>Ready to Scan</h4>
+            <p>Select your webcam and click <strong>Start Camera</strong> to begin tracking products. You can also type a barcode manually.</p>
+          </div>
+        </div>
+
+        <!-- History list container -->
+        <div class="history-list-wrapper">
+          <div class="history-list" id="history-list">
+            <p class="empty-history-text">No recent scans found.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Smart Barcode & QR Code Food Tracker &copy; 2026. Made with ❤️ for wellness tracking.</p>
+  </footer>
+
+  <!-- App Script -->
+  <script src="/app.js"></script>
+</body>
+</html>
