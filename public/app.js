@@ -41,34 +41,82 @@ function setupEventListeners() {
   
   refreshHistoryBtn.addEventListener("click", loadScanHistory);
   backToHistoryBtn.addEventListener("click", showHistoryPanel);
+
+  // Switch cameras dynamically on selection change
+  cameraSelect.addEventListener("change", handleCameraChange);
+}
+
+async function handleCameraChange() {
+  currentCameraId = cameraSelect.value;
+  if (isScanning) {
+    console.log("Switching camera to:", currentCameraId);
+    await stopScanning();
+    await startScanning();
+  }
 }
 
 // Camera initialization
 async function initializeCameraList() {
+  toggleCameraBtn.disabled = false; // Always keep the start button active
+
+  // If the library hasn't loaded yet, check again in a bit
+  if (typeof Html5Qrcode === "undefined") {
+    console.warn("Html5Qrcode library not ready, retrying...");
+    cameraSelect.innerHTML = '<option value="environment">Loading scanner...</option>';
+    setTimeout(initializeCameraList, 500);
+    return;
+  }
+
   try {
-    // Check if camera permission is available
+    // Check if camera permission is available or already granted
     cameras = await Html5Qrcode.getCameras();
     cameraSelect.innerHTML = "";
     
     if (cameras && cameras.length > 0) {
+      // Add default constraints options at the top
+      const defaultBackOpt = document.createElement("option");
+      defaultBackOpt.value = "environment";
+      defaultBackOpt.text = "Default Back Camera (Recommended)";
+      cameraSelect.appendChild(defaultBackOpt);
+
+      const defaultFrontOpt = document.createElement("option");
+      defaultFrontOpt.value = "user";
+      defaultFrontOpt.text = "Default Front Camera";
+      cameraSelect.appendChild(defaultFrontOpt);
+
       cameras.forEach((camera, index) => {
         const option = document.createElement("option");
         option.value = camera.id;
-        // Clean up names if they contain duplicate terms
         option.text = camera.label || `Camera ${index + 1}`;
         cameraSelect.appendChild(option);
       });
-      currentCameraId = cameras[0].id;
-      toggleCameraBtn.disabled = false;
+      
+      cameraSelect.value = "environment";
+      currentCameraId = "environment";
     } else {
-      cameraSelect.innerHTML = '<option value="">No cameras found</option>';
-      toggleCameraBtn.disabled = true;
+      addDefaultOptions();
     }
   } catch (err) {
-    console.error("Error getting cameras", err);
-    cameraSelect.innerHTML = '<option value="">Camera access denied</option>';
-    toggleCameraBtn.disabled = true;
+    console.warn("Could not retrieve camera list initially (this is normal before permission is granted):", err);
+    addDefaultOptions();
   }
+}
+
+function addDefaultOptions() {
+  cameraSelect.innerHTML = "";
+  
+  const optionBack = document.createElement("option");
+  optionBack.value = "environment";
+  optionBack.text = "Default Back Camera (Recommended)";
+  cameraSelect.appendChild(optionBack);
+
+  const optionFront = document.createElement("option");
+  optionFront.value = "user";
+  optionFront.text = "Default Front Camera";
+  cameraSelect.appendChild(optionFront);
+  
+  cameraSelect.value = "environment";
+  currentCameraId = "environment";
 }
 
 // Toggle Start/Stop scanning
@@ -86,6 +134,11 @@ async function toggleCamera() {
 }
 
 async function startScanning() {
+  if (typeof Html5Qrcode === "undefined") {
+    alert("The scanner library is still loading. Please try again in a moment.");
+    return;
+  }
+
   if (!html5QrCode) {
     html5QrCode = new Html5Qrcode("reader");
   }
@@ -111,18 +164,59 @@ async function startScanning() {
       }
     };
 
+    // Use environment/user constraint object or the specific camera device ID
+    const target = (currentCameraId === "environment" || currentCameraId === "user")
+      ? { facingMode: currentCameraId }
+      : currentCameraId;
+
     await html5QrCode.start(
-      currentCameraId,
+      target,
       config,
       onBarcodeDetected,
       (errorMessage) => {
         // Verbose scan error is normal for frame-by-frame check, ignore
       }
     );
+
+    // Refresh devices list once active (permissions are guaranteed to be granted now)
+    setTimeout(refreshCameraNamesAfterPermission, 1000);
+
   } catch (err) {
     console.error("Failed to start scanning", err);
     alert(`Error starting camera: ${err.message || err}`);
     await stopScanning();
+  }
+}
+
+async function refreshCameraNamesAfterPermission() {
+  try {
+    if (typeof Html5Qrcode === "undefined") return;
+    const freshCameras = await Html5Qrcode.getCameras();
+    if (freshCameras && freshCameras.length > 0) {
+      const prevVal = cameraSelect.value;
+      cameraSelect.innerHTML = "";
+      
+      const defaultBackOpt = document.createElement("option");
+      defaultBackOpt.value = "environment";
+      defaultBackOpt.text = "Default Back Camera (Recommended)";
+      cameraSelect.appendChild(defaultBackOpt);
+
+      const defaultFrontOpt = document.createElement("option");
+      defaultFrontOpt.value = "user";
+      defaultFrontOpt.text = "Default Front Camera";
+      cameraSelect.appendChild(defaultFrontOpt);
+
+      freshCameras.forEach((camera, index) => {
+        const option = document.createElement("option");
+        option.value = camera.id;
+        option.text = camera.label || `Camera ${index + 1}`;
+        cameraSelect.appendChild(option);
+      });
+      
+      cameraSelect.value = prevVal;
+    }
+  } catch (e) {
+    console.warn("Could not refresh camera names:", e);
   }
 }
 
