@@ -18,7 +18,13 @@ ROI_MIN_W, ROI_MAX_W = 0.25, 0.96
 ROI_MIN_H, ROI_MAX_H = 0.12, 0.90
 DIM_ALPHA = 0.35              # brightness of the area outside the scan window
 RESULT_HOLD_SECONDS = 6.0     # how long the last hit stays on the result bar
-DECODE_TARGET_WIDTH = 1000    # upscale pass aims for this width in pixels
+# Scale ladder for the decode pipeline, as target image widths in pixels.
+# Counter-intuitively, OpenCV's BarcodeDetector reads a 1D symbol most reliably when
+# it is only a couple of hundred pixels wide, and *fails* on the same symbol rendered
+# larger - so the shrinking rungs come first and are what rescue a product held close
+# enough to fill the scan window. The final enlarging rung is for small or distant
+# codes, and is what pyzbar prefers when it is available.
+DECODE_SCALE_WIDTHS = (620, 420, 300, 220, 160, 1000)
 CAPTURE_WIDTH, CAPTURE_HEIGHT = 1280, 720
 TOP_BANNER_H = 30             # height of the controls bar
 BOTTOM_BANNER_H = 34          # height of the result bar
@@ -146,46 +152,70 @@ def _remap_barcodes(barcodes, scale=1.0, offset_x=0, offset_y=0):
     return barcodes
 
 
-def _run_decode_on_image(image_gray):
-    """Internal helper to run barcode and QR decoders on a single-channel grayscale image."""
-    if PYZBAR_AVAILABLE:
+def _ensure_detectors():
+    """Lazily constructs the OpenCV detectors, tolerating builds without the barcode module."""
+    if not hasattr(_ensure_detectors, "barcode"):
         try:
-            return [_to_mutable(d) for d in pyzbar.decode(image_gray)]
+            _ensure_detectors.barcode = cv2.barcode.BarcodeDetector()
         except Exception:
-            pass
+            _ensure_detectors.barcode = None
+        try:
+            _ensure_detectors.qrcode = cv2.QRCodeDetector()
+        except Exception:
+            _ensure_detectors.qrcode = None
+    return _ensure_detectors.barcode, _ensure_detectors.qrcode
 
-    # OpenCV Fallback
-    decoded_codes = []
-    if not hasattr(decode_frame, "barcode_detector"):
-        try:
-            decode_frame.barcode_detector = cv2.barcode.BarcodeDetector()
-        except Exception:
-            decode_frame.barcode_detector = None
-        decode_frame.qrcode_detector = cv2.QRCodeDetector()
 
-    # 1. Scan for Barcodes (skipped when this OpenCV build ships no barcode module)
-    if decode_frame.barcode_detector is not None:
-        try:
-            retval, decoded_info, points, _ = decode_frame.barcode_detector.detectAndDecodeMulti(image_gray)
-            if retval:
-                if len(points.shape) == 2:
-                    points = np.expand_dims(points, axis=0)
-                for info, pts in zip(decoded_info, points):
-                    info_stripped = info.strip()
-                    if info_stripped:
-                        # Apply checksum validation filter for 1D codes in fallback mode to avoid misreads
-                        if info_stripped.isdigit():
-                            if len(info_stripped) == 13 and not is_valid_ean13(info_stripped):
-                                continue  # Discard corrupt EAN-13 scan
-                            elif len(info_stripped) == 12 and not is_valid_upc(info_stripped):
-                                continue  # Discard corrupt UPC-A scan
-                        decoded_codes.append(MockDecoded(info_stripped, pts))
-        except Exception:
-            pass
-        
-    # 2. Scan for QR Codes (no checksum validation needed for QR)
+def _decode_pyzbar(image_gray):
+    """Decodes with pyzbar (handles 1D and QR in one call). Returns [] on any failure."""
     try:
-        retval, decoded_info, points, _ = decode_frame.qrcode_detector.detectAndDecodeMulti(image_gray)
+        return [_to_mutable(d) for d in pyzbar.decode(image_gray)]
+    except Exception:
+        return []
+
+
+def _decode_opencv_1d(image_gray):
+    """
+    Decodes 1D barcodes with OpenCV's BarcodeDetector.
+
+    Cheap enough (a few milliseconds at any size) to run on every candidate image.
+    Checksums are enforced here because this detector will happily return a
+    corrupt read, and a wrong 13-digit code looks up a wrong product.
+    """
+    detector, _ = _ensure_detectors()
+    if detector is None:
+        return []
+
+    decoded_codes = []
+    try:
+        retval, decoded_info, points, _ = detector.detectAndDecodeMulti(image_gray)
+        if retval:
+            if len(points.shape) == 2:
+                points = np.expand_dims(points, axis=0)
+            for info, pts in zip(decoded_info, points):
+                info_stripped = info.strip()
+                if not info_stripped:
+                    continue
+                if info_stripped.isdigit():
+                    if len(info_stripped) == 13 and not is_valid_ean13(info_stripped):
+                        continue  # Discard corrupt EAN-13 scan
+                    if len(info_stripped) == 12 and not is_valid_upc(info_stripped):
+                        continue  # Discard corrupt UPC-A scan
+                decoded_codes.append(MockDecoded(info_stripped, pts))
+    except Exception:
+        pass
+    return decoded_codes
+
+
+def _decode_opencv_qr(image_gray):
+    """Decodes QR codes with OpenCV's QRCodeDetector (no checksum needed - QR is self-correcting)."""
+    _, detector = _ensure_detectors()
+    if detector is None:
+        return []
+
+    decoded_codes = []
+    try:
+        retval, decoded_info, points, _ = detector.detectAndDecodeMulti(image_gray)
         if retval:
             if len(points.shape) == 2:
                 points = np.expand_dims(points, axis=0)
@@ -194,52 +224,84 @@ def _run_decode_on_image(image_gray):
                     decoded_codes.append(MockDecoded(info.strip(), pts))
     except Exception:
         pass
-        
     return decoded_codes
+
+
+def _run_decode_on_image(image_gray):
+    """Runs every available decoder over a single grayscale image."""
+    if PYZBAR_AVAILABLE:
+        found = _decode_pyzbar(image_gray)
+        if found:
+            return found
+    return _decode_opencv_1d(image_gray) + _decode_opencv_qr(image_gray)
+
+
+def _decode_candidates(gray):
+    """
+    Builds the (image, scale) variants to attempt, cheapest and most likely first.
+
+    Every variant is prepared up front rather than lazily: thresholding, sharpening
+    and resizing all cost well under a millisecond, which is negligible next to the
+    detector calls that consume them.
+    """
+    candidates = [(gray, 1.0)]
+
+    # Contrast fix for uneven lighting
+    try:
+        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        candidates.append((thresh, 1.0))
+    except Exception:
+        pass
+
+    # Sharpening fix for motion blur
+    try:
+        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+        candidates.append((cv2.filter2D(gray, -1, kernel), 1.0))
+    except Exception:
+        pass
+
+    # Scale ladder. See DECODE_SCALE_WIDTHS: the shrinking rungs come first because
+    # they are what rescue a barcode held close enough to fill the scan window.
+    width = float(gray.shape[1])
+    for target in DECODE_SCALE_WIDTHS:
+        scale = target / width
+        if abs(scale - 1.0) < 0.08 or not (0.12 <= scale <= 3.0):
+            continue  # too close to the native pass above, or an absurd resize
+        try:
+            interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC
+            resized = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=interp)
+            candidates.append((resized, scale))
+        except Exception:
+            pass
+
+    return candidates
 
 
 def _decode_multipass(gray):
     """
-    Runs the multi-pass image processing pipeline over a grayscale image.
-    Enhances scanning stability under poor lighting, motion blur, and low resolution.
-    Coordinates are returned in the coordinate space of the image passed in.
+    Runs the decode pipeline over a grayscale image, returning at the first read.
+    Coordinates come back in the coordinate space of the image passed in.
+
+    The two engines are driven differently because their costs differ sharply.
+    pyzbar reads 1D and QR in a single call, so it simply walks the candidates.
+    OpenCV's QR detector costs ~15ms per call at any image size - four times the
+    1D detector - so it runs once, and only after the whole 1D sweep comes up empty.
     """
-    # PASS 1: Standard Grayscale Frame
-    barcodes = _run_decode_on_image(gray)
-    if barcodes:
-        return barcodes
+    candidates = _decode_candidates(gray)
 
-    # PASS 2: Binarization (Otsu's Thresholding for contrast)
-    try:
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        barcodes = _run_decode_on_image(thresh)
-        if barcodes:
-            return barcodes
-    except Exception:
-        pass
+    if PYZBAR_AVAILABLE:
+        for image, scale in candidates:
+            found = _decode_pyzbar(image)
+            if found:
+                return _remap_barcodes(found, scale=scale)
+        return []
 
-    # PASS 3: Image Sharpening (fixes motion blur)
-    try:
-        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
-        sharpened = cv2.filter2D(gray, -1, kernel)
-        barcodes = _run_decode_on_image(sharpened)
-        if barcodes:
-            return barcodes
-    except Exception:
-        pass
+    for image, scale in candidates:
+        found = _decode_opencv_1d(image)
+        if found:
+            return _remap_barcodes(found, scale=scale)
 
-    # PASS 4: Upscaling (zoom for small/distant barcodes). The scale adapts to the
-    # image width, so a tightly cropped scan window gets the zoom it needs.
-    try:
-        scale = min(3.0, max(1.5, DECODE_TARGET_WIDTH / float(gray.shape[1])))
-        upscaled = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        barcodes = _run_decode_on_image(upscaled)
-        if barcodes:
-            return _remap_barcodes(barcodes, scale=scale)
-    except Exception:
-        pass
-
-    return []
+    return _decode_opencv_qr(gray)
 
 
 def decode_frame(frame, roi=None):
