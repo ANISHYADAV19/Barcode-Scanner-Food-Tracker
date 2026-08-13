@@ -200,8 +200,15 @@ async function performLookup(barcode) {
     
     if (data.status === "found" && data.record) {
       displayProduct(data.record);
+      saveToLocalHistory(
+        data.barcode, 
+        "found", 
+        data.record.source || "Open Food Facts", 
+        data.record.display || data.record.name
+      );
     } else {
       displayNotFound(barcode);
+      saveToLocalHistory(barcode, "not_found", "None", "Product Not Found");
     }
     
     // Refresh history panel
@@ -391,15 +398,38 @@ function showHistoryPanel() {
   lastScannedBarcode = "";
 }
 
-// Fetch and load scan history
-async function loadScanHistory() {
+// Save scan result to browser local storage
+function saveToLocalHistory(barcode, status, source, product) {
   try {
-    const response = await fetch("/api/history?limit=25");
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    let history = JSON.parse(localStorage.getItem("scan_history") || "[]");
+    
+    // Remove duplicates to push this barcode to top of the list
+    history = history.filter(item => item.barcode !== barcode);
+    
+    history.unshift({
+      timestamp: new Date().toISOString().replace('T', ' ').split('.')[0],
+      barcode: barcode,
+      status: status,
+      source: source,
+      product: product
+    });
+    
+    // Cap history list size at 50 items
+    if (history.length > 50) {
+      history = history.slice(0, 50);
     }
-    const data = await response.json();
-    renderHistoryList(data);
+    
+    localStorage.setItem("scan_history", JSON.stringify(history));
+  } catch (e) {
+    console.error("Failed to save to localStorage history", e);
+  }
+}
+
+// Fetch and load scan history (now reading client-side from localStorage)
+function loadScanHistory() {
+  try {
+    const history = JSON.parse(localStorage.getItem("scan_history") || "[]");
+    renderHistoryList(history);
   } catch (err) {
     console.error("Error loading scan history", err);
     historyList.innerHTML = '<p class="empty-history-text">Failed to load history.</p>';
