@@ -29,6 +29,7 @@ document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
   loadScanHistory();
   initializeCameraList();
+  setupVideoAutoplayObserver();
 });
 
 // Event Listeners setup
@@ -133,6 +134,39 @@ async function toggleCamera() {
   }
 }
 
+// Watcher to force video elements to play inline and muted (fixes iOS/Safari black screen)
+function setupVideoAutoplayObserver() {
+  if (typeof MutationObserver === "undefined") return;
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      mutation.addedNodes.forEach((node) => {
+        if (node.tagName === "VIDEO") {
+          node.setAttribute("playsinline", "true");
+          node.setAttribute("webkit-playsinline", "true");
+          node.setAttribute("muted", "true");
+          node.muted = true;
+          node.play().catch(e => console.warn("[Video Observer] play() failed or auto-played:", e));
+        } else if (node.querySelectorAll) {
+          const videos = node.querySelectorAll("video");
+          videos.forEach(v => {
+            v.setAttribute("playsinline", "true");
+            v.setAttribute("webkit-playsinline", "true");
+            v.setAttribute("muted", "true");
+            v.muted = true;
+            v.play().catch(e => console.warn("[Video Observer] nested play() failed or auto-played:", e));
+          });
+        }
+      });
+    });
+  });
+
+  const readerEl = document.getElementById("reader");
+  if (readerEl) {
+    observer.observe(readerEl, { childList: true, subtree: true });
+    console.log("[Video Observer] Successfully attached to #reader");
+  }
+}
+
 async function startScanning() {
   if (typeof Html5Qrcode === "undefined") {
     alert("The scanner library is still loading. Please try again in a moment.");
@@ -140,7 +174,22 @@ async function startScanning() {
   }
 
   if (!html5QrCode) {
-    html5QrCode = new Html5Qrcode("reader");
+    // Resolve supported formats namespace dynamically
+    const formats = (typeof Html5QrcodeSupportedFormats !== "undefined")
+      ? Html5QrcodeSupportedFormats
+      : (Html5Qrcode.SupportedFormats || {});
+
+    // Restrict scan formats to EAN/UPC barcodes, Code 128, and QR to optimize decoder CPU load
+    html5QrCode = new Html5Qrcode("reader", {
+      formatsToSupport: [
+        formats.EAN_13,
+        formats.EAN_8,
+        formats.UPC_A,
+        formats.UPC_E,
+        formats.CODE_128,
+        formats.QR_CODE
+      ].filter(Boolean)
+    });
   }
 
   toggleCameraBtn.textContent = "Stop Camera";
@@ -151,16 +200,20 @@ async function startScanning() {
 
   try {
     const config = {
-      fps: 20,
-      aspectRatio: 1.6,
+      fps: 25, // Slightly higher frame rate for snappier feedback
       qrbox: (width, height) => {
-        // Wide scan window tailored for 1D barcodes (EAN-13, UPC)
-        const qrWidth = Math.floor(width * 0.75);
-        const qrHeight = Math.floor(height * 0.35);
+        // Wide scan window (80% width, 30% height) aligned with CSS viewfinder brackets
+        const qrWidth = Math.floor(width * 0.80);
+        const qrHeight = Math.floor(height * 0.30);
         return { width: qrWidth, height: qrHeight };
       },
       experimentalFeatures: {
         useBarCodeDetectorIfSupported: true
+      },
+      // Force ideal HD resolution to resolve small printed barcode lines clearly
+      videoConstraints: {
+        width: { min: 640, ideal: 1280, max: 1920 },
+        height: { min: 480, ideal: 720, max: 1080 }
       }
     };
 

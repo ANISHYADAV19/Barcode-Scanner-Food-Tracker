@@ -237,7 +237,8 @@ body {
 #reader video {
   width: 100% !important;
   height: 100% !important;
-  object-fit: cover !important;
+  object-fit: contain !important;
+  border: 1px solid transparent; /* Forces Safari layout repaint to prevent black screen */
 }
 
 /* Custom Viewfinder overlays on top of the library's video stream */
@@ -278,29 +279,29 @@ body {
 }
 
 .top-left {
-  top: 25%;
-  left: 20%;
+  top: 35%;
+  left: 10%;
   border-right: none;
   border-bottom: none;
 }
 
 .top-right {
-  top: 25%;
-  right: 20%;
+  top: 35%;
+  right: 10%;
   border-left: none;
   border-bottom: none;
 }
 
 .bottom-left {
-  bottom: 25%;
-  left: 20%;
+  bottom: 35%;
+  left: 10%;
   border-right: none;
   border-top: none;
 }
 
 .bottom-right {
-  bottom: 25%;
-  right: 20%;
+  bottom: 35%;
+  right: 10%;
   border-left: none;
   border-top: none;
 }
@@ -308,9 +309,9 @@ body {
 /* Laser sweep line */
 .laser-line {
   position: absolute;
-  top: 25%;
-  left: 20%;
-  right: 20%;
+  top: 35%;
+  left: 10%;
+  right: 10%;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
   box-shadow: 0 0 12px 2px var(--color-primary-glow);
@@ -340,10 +341,10 @@ body {
 
 @keyframes laserSweep {
   0%, 100% {
-    top: 25%;
+    top: 35%;
   }
   50% {
-    top: 75%;
+    top: 65%;
   }
 }
 
