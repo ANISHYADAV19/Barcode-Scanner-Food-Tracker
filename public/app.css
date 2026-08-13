@@ -279,28 +279,28 @@ body {
 }
 
 .top-left {
-  top: 35%;
+  top: 25%;
   left: 10%;
   border-right: none;
   border-bottom: none;
 }
 
 .top-right {
-  top: 35%;
+  top: 25%;
   right: 10%;
   border-left: none;
   border-bottom: none;
 }
 
 .bottom-left {
-  bottom: 35%;
+  bottom: 25%;
   left: 10%;
   border-right: none;
   border-top: none;
 }
 
 .bottom-right {
-  bottom: 35%;
+  bottom: 25%;
   right: 10%;
   border-left: none;
   border-top: none;
@@ -309,7 +309,7 @@ body {
 /* Laser sweep line */
 .laser-line {
   position: absolute;
-  top: 35%;
+  top: 25%;
   left: 10%;
   right: 10%;
   height: 2px;
@@ -341,10 +341,10 @@ body {
 
 @keyframes laserSweep {
   0%, 100% {
-    top: 35%;
+    top: 25%;
   }
   50% {
-    top: 65%;
+    top: 75%;
   }
 }
 

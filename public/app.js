@@ -56,6 +56,49 @@ async function handleCameraChange() {
   }
 }
 
+// Helper to identify back/rear facing camera ID from device list
+function findBackCamera(devices) {
+  if (!devices || devices.length === 0) return "environment";
+  
+  const backKeywords = ["back", "rear", "environment", "main", "outer", "facing 0"];
+  // 1. Look for clear rear-camera labels
+  for (const device of devices) {
+    const label = (device.label || "").toLowerCase();
+    if (backKeywords.some(keyword => label.includes(keyword))) {
+      return device.id;
+    }
+  }
+  
+  // 2. Filter out anything containing front-facing terms
+  const nonFront = devices.filter(device => {
+    const label = (device.label || "").toLowerCase();
+    return !label.includes("front") && !label.includes("user") && !label.includes("selfie") && !label.includes("inner") && !label.includes("facing 1");
+  });
+  
+  if (nonFront.length > 0) {
+    return nonFront[0].id;
+  }
+  
+  // 3. Fallback: on mobile devices, the last camera returned is typically the back camera
+  return devices[devices.length - 1].id;
+}
+
+// Helper to identify front/user facing camera ID from device list
+function findFrontCamera(devices) {
+  if (!devices || devices.length === 0) return "user";
+  
+  const frontKeywords = ["front", "user", "selfie", "inner", "facing 1"];
+  for (const device of devices) {
+    const label = (device.label || "").toLowerCase();
+    if (frontKeywords.some(keyword => label.includes(keyword))) {
+      return device.id;
+    }
+  }
+  
+  // Default to first camera in list
+  return devices[0].id;
+}
+
 // Camera initialization
 async function initializeCameraList() {
   toggleCameraBtn.disabled = false; // Always keep the start button active
@@ -74,14 +117,17 @@ async function initializeCameraList() {
     cameraSelect.innerHTML = "";
     
     if (cameras && cameras.length > 0) {
-      // Add default constraints options at the top
+      const backId = findBackCamera(cameras);
+      const frontId = findFrontCamera(cameras);
+
+      // Add default constraints options linked directly to resolved device IDs
       const defaultBackOpt = document.createElement("option");
-      defaultBackOpt.value = "environment";
+      defaultBackOpt.value = backId;
       defaultBackOpt.text = "Default Back Camera (Recommended)";
       cameraSelect.appendChild(defaultBackOpt);
 
       const defaultFrontOpt = document.createElement("option");
-      defaultFrontOpt.value = "user";
+      defaultFrontOpt.value = frontId;
       defaultFrontOpt.text = "Default Front Camera";
       cameraSelect.appendChild(defaultFrontOpt);
 
@@ -92,8 +138,8 @@ async function initializeCameraList() {
         cameraSelect.appendChild(option);
       });
       
-      cameraSelect.value = "environment";
-      currentCameraId = "environment";
+      cameraSelect.value = backId;
+      currentCameraId = backId;
     } else {
       addDefaultOptions();
     }
@@ -202,9 +248,9 @@ async function startScanning() {
     const config = {
       fps: 25, // Slightly higher frame rate for snappier feedback
       qrbox: (width, height) => {
-        // Wide scan window (80% width, 30% height) aligned with CSS viewfinder brackets
+        // Wide scan window (80% width, 50% height) aligned with CSS viewfinder brackets
         const qrWidth = Math.floor(width * 0.80);
-        const qrHeight = Math.floor(height * 0.30);
+        const qrHeight = Math.floor(height * 0.50);
         return { width: qrWidth, height: qrHeight };
       },
       experimentalFeatures: {
@@ -249,13 +295,16 @@ async function refreshCameraNamesAfterPermission() {
       const prevVal = cameraSelect.value;
       cameraSelect.innerHTML = "";
       
+      const backId = findBackCamera(freshCameras);
+      const frontId = findFrontCamera(freshCameras);
+
       const defaultBackOpt = document.createElement("option");
-      defaultBackOpt.value = "environment";
+      defaultBackOpt.value = backId;
       defaultBackOpt.text = "Default Back Camera (Recommended)";
       cameraSelect.appendChild(defaultBackOpt);
 
       const defaultFrontOpt = document.createElement("option");
-      defaultFrontOpt.value = "user";
+      defaultFrontOpt.value = frontId;
       defaultFrontOpt.text = "Default Front Camera";
       cameraSelect.appendChild(defaultFrontOpt);
 
@@ -266,7 +315,13 @@ async function refreshCameraNamesAfterPermission() {
         cameraSelect.appendChild(option);
       });
       
-      cameraSelect.value = prevVal;
+      // Restore the active camera selection
+      if (prevVal === "environment" || prevVal === "user") {
+        cameraSelect.value = prevVal === "environment" ? backId : frontId;
+      } else {
+        cameraSelect.value = prevVal;
+      }
+      currentCameraId = cameraSelect.value;
     }
   } catch (e) {
     console.warn("Could not refresh camera names:", e);
