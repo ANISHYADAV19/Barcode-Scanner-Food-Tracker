@@ -3,76 +3,7 @@
   --font-display: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* Premium Dark Theme (Default) */
-  --bg-base: hsl(222, 47%, 7%);
-  --bg-gradient-start: hsl(222, 47%, 7%);
-  --bg-gradient-end: hsl(222, 40%, 12%);
-  
-  --card-bg: hsla(222, 40%, 15%, 0.45);
-  --card-border: hsla(222, 30%, 25%, 0.35);
-  --card-border-glow: hsla(190, 100%, 50%, 0.15);
-  
-  --text-primary: hsl(210, 40%, 98%);
-  --text-secondary: hsl(215, 20%, 75%);
-  --text-muted: hsl(215, 16%, 55%);
-
-  --color-primary: hsl(190, 100%, 48%);
-  --color-primary-hover: hsl(190, 100%, 40%);
-  --color-primary-glow: hsla(190, 100%, 48%, 0.3);
-  
-  --color-accent: hsl(270, 90%, 65%);
-  --color-accent-hover: hsl(270, 85%, 55%);
-  
-  --color-success: hsl(142, 70%, 45%);
-  --color-success-bg: hsla(142, 70%, 45%, 0.15);
-  --color-pending: hsl(48, 95%, 53%);
-  --color-pending-bg: hsla(48, 95%, 53%, 0.15);
-  --color-danger: hsl(350, 80%, 55%);
-  --color-danger-bg: hsla(350, 80%, 55%, 0.15);
-  --color-error: hsl(25, 95%, 55%);
-  --color-error-bg: hsla(25, 95%, 55%, 0.15);
-  
-  /* Nutri-Score HSL Colors */
-  --nutri-a: hsl(140, 75%, 35%);
-  --nutri-b: hsl(95, 70%, 42%);
-  --nutri-c: hsl(48, 90%, 50%);
-  --nutri-d: hsl(28, 90%, 53%);
-  --nutri-e: hsl(5, 85%, 53%);
-  
-  /* NOVA Group Colors */
-  --nova-1: hsl(140, 70%, 40%);
-  --nova-2: hsl(80, 70%, 43%);
-  --nova-3: hsl(35, 90%, 50%);
-  --nova-4: hsl(5, 85%, 50%);
-
-  --border-radius-lg: 16px;
-  --border-radius-md: 12px;
-  --border-radius-sm: 8px;
-  
-  --shadow-premium: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
-  --shadow-hover: 0 12px 40px 0 hsla(0, 0%, 0%, 0.5), 0 0 20px 0 hsla(190, 100%, 50%, 0.05);
-  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-
-  /* Theme-aware layout values (Dark Mode) */
-  --item-bg: hsla(222, 35%, 11%, 0.4);
-  --item-bg-hover: hsla(222, 30%, 16%, 0.6);
-  --scrollbar-thumb: hsla(222, 20%, 30%, 0.6);
-  --input-bg: hsla(222, 30%, 15%, 0.5);
-  --input-bg-focus: hsla(222, 30%, 25%, 0.8);
-  --btn-secondary-bg: hsla(222, 30%, 20%, 0.5);
-  --btn-secondary-bg-hover: hsla(222, 30%, 30%, 0.8);
-  --btn-primary-text: hsl(222, 50%, 6%);
-  --styled-select-bg: hsl(222, 35%, 12%);
-  --divider-color: hsla(222, 30%, 20%, 0.5);
-  --detail-bg: hsl(222, 35%, 12%);
-  --body-radial-gradient: radial-gradient(circle at 50% 0%, var(--bg-gradient-end), var(--bg-gradient-start));
-  --header-border: hsla(222, 30%, 20%, 0.4);
-  --footer-border: hsla(222, 30%, 20%, 0.2);
-  --logo-gradient-start: #ffffff;
-}
-
-/* Premium Light Theme */
-:root[data-theme="light"] {
+  /* Premium Light Theme (Default) */
   --bg-base: hsl(210, 25%, 98%);
   --bg-gradient-start: hsl(0, 0%, 100%);
   --bg-gradient-end: hsl(210, 20%, 94%);
@@ -101,8 +32,28 @@
   --color-error: hsl(25, 80%, 40%);
   --color-error-bg: hsla(25, 95%, 55%, 0.08);
   
+  /* Nutri-Score HSL Colors */
+  --nutri-a: hsl(140, 75%, 35%);
+  --nutri-b: hsl(95, 70%, 42%);
+  --nutri-c: hsl(48, 90%, 50%);
+  --nutri-d: hsl(28, 90%, 53%);
+  --nutri-e: hsl(5, 85%, 53%);
+  
+  /* NOVA Group Colors */
+  --nova-1: hsl(140, 70%, 40%);
+  --nova-2: hsl(80, 70%, 43%);
+  --nova-3: hsl(35, 90%, 50%);
+  --nova-4: hsl(5, 85%, 50%);
+
+  --border-radius-lg: 16px;
+  --border-radius-md: 12px;
+  --border-radius-sm: 8px;
+  
   --shadow-premium: 0 10px 30px -10px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.03);
   --shadow-hover: 0 15px 35px -5px rgba(0, 0, 0, 0.12), 0 0 20px 0 hsla(217, 90%, 56%, 0.05);
+  --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Theme-aware layout values (Light Mode default) */
   --item-bg: hsla(215, 20%, 93%, 0.5);
   --item-bg-hover: hsla(215, 20%, 88%, 0.7);
   --scrollbar-thumb: hsla(215, 10%, 75%, 0.8);
@@ -118,6 +69,55 @@
   --header-border: hsl(215, 20%, 90%);
   --footer-border: hsl(215, 20%, 92%);
   --logo-gradient-start: var(--text-primary);
+}
+
+/* Premium Dark Theme Override */
+:root[data-theme="dark"] {
+  --bg-base: hsl(222, 47%, 7%);
+  --bg-gradient-start: hsl(222, 47%, 7%);
+  --bg-gradient-end: hsl(222, 40%, 12%);
+  
+  --card-bg: hsla(222, 40%, 15%, 0.45);
+  --card-border: hsla(222, 30%, 25%, 0.35);
+  --card-border-glow: hsla(190, 100%, 50%, 0.15);
+  
+  --text-primary: hsl(210, 40%, 98%);
+  --text-secondary: hsl(215, 20%, 75%);
+  --text-muted: hsl(215, 16%, 55%);
+
+  --color-primary: hsl(190, 100%, 48%);
+  --color-primary-hover: hsl(190, 100%, 40%);
+  --color-primary-glow: hsla(190, 100%, 48%, 0.3);
+  
+  --color-accent: hsl(270, 90%, 65%);
+  --color-accent-hover: hsl(270, 85%, 55%);
+  
+  --color-success: hsl(142, 70%, 45%);
+  --color-success-bg: hsla(142, 70%, 45%, 0.15);
+  --color-pending: hsl(48, 95%, 53%);
+  --color-pending-bg: hsla(48, 95%, 53%, 0.15);
+  --color-danger: hsl(350, 80%, 55%);
+  --color-danger-bg: hsla(350, 80%, 55%, 0.15);
+  --color-error: hsl(25, 95%, 55%);
+  --color-error-bg: hsla(25, 95%, 55%, 0.15);
+  
+  --shadow-premium: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
+  --shadow-hover: 0 12px 40px 0 hsla(0, 0%, 0%, 0.5), 0 0 20px 0 hsla(190, 100%, 50%, 0.05);
+  --item-bg: hsla(222, 35%, 11%, 0.4);
+  --item-bg-hover: hsla(222, 30%, 16%, 0.6);
+  --scrollbar-thumb: hsla(222, 20%, 30%, 0.6);
+  --input-bg: hsla(222, 30%, 15%, 0.5);
+  --input-bg-focus: hsla(222, 30%, 25%, 0.8);
+  --btn-secondary-bg: hsla(222, 30%, 20%, 0.5);
+  --btn-secondary-bg-hover: hsla(222, 30%, 30%, 0.8);
+  --btn-primary-text: hsl(222, 50%, 6%);
+  --styled-select-bg: hsl(222, 35%, 12%);
+  --divider-color: hsla(222, 30%, 20%, 0.5);
+  --detail-bg: hsl(222, 35%, 12%);
+  --body-radial-gradient: radial-gradient(circle at 50% 0%, var(--bg-gradient-end), var(--bg-gradient-start));
+  --header-border: hsla(222, 30%, 20%, 0.4);
+  --footer-border: hsla(222, 30%, 20%, 0.2);
+  --logo-gradient-start: #ffffff;
 }
 
 /* Reset and Global Styles */
@@ -247,10 +247,10 @@ body {
   display: block;
 }
 
-:root[data-theme="light"] .theme-toggle-btn .sun-icon {
+:root[data-theme="dark"] .theme-toggle-btn .sun-icon {
   display: block;
 }
-:root[data-theme="light"] .theme-toggle-btn .moon-icon {
+:root[data-theme="dark"] .theme-toggle-btn .moon-icon {
   display: none;
 }
 

@@ -702,8 +702,8 @@ function setupThemeToggle() {
   if (!themeToggleBtn) return;
 
   themeToggleBtn.addEventListener("click", () => {
-    const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
-    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
+    const newTheme = currentTheme === "light" ? "dark" : "light";
     
     document.documentElement.setAttribute("data-theme", newTheme);
     localStorage.setItem("app_theme", newTheme);
