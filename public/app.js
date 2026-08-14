@@ -257,10 +257,10 @@ async function startScanning() {
       experimentalFeatures: {
         useBarCodeDetectorIfSupported: true
       },
-      // Force ideal HD resolution to resolve small printed barcode lines clearly
+      // Request ideal HD resolution, but do not enforce minimums to prevent crashes on lower-end front/rear cameras
       videoConstraints: {
-        width: { min: 640, ideal: 1280, max: 1920 },
-        height: { min: 480, ideal: 720, max: 1080 }
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
       }
     };
 
@@ -269,14 +269,39 @@ async function startScanning() {
       ? { facingMode: currentCameraId }
       : currentCameraId;
 
-    await html5QrCode.start(
-      target,
-      config,
-      onBarcodeDetected,
-      (errorMessage) => {
-        // Verbose scan error is normal for frame-by-frame check, ignore
-      }
-    );
+    try {
+      console.log("Starting camera with target:", target, "and config:", config);
+      await html5QrCode.start(
+        target,
+        config,
+        onBarcodeDetected,
+        (errorMessage) => {
+          // Verbose scan error is normal for frame-by-frame check, ignore
+        }
+      );
+    } catch (startErr) {
+      console.warn("Failed to start with custom constraints. Initiating fallback default constraints:", startErr);
+      
+      // Fallback: Try with generic facingMode and no custom resolution constraints to guarantee camera starts
+      const fallbackConfig = {
+        fps: 25,
+        qrbox: (width, height) => {
+          const qrWidth = Math.floor(width * 0.80);
+          const qrHeight = Math.floor(height * 0.50);
+          return { width: qrWidth, height: qrHeight };
+        },
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
+      };
+      
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        fallbackConfig,
+        onBarcodeDetected,
+        (errorMessage) => {}
+      );
+    }
 
     // Refresh devices list once active (permissions are guaranteed to be granted now)
     setTimeout(refreshCameraNamesAfterPermission, 1000);
