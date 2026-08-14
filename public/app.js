@@ -261,22 +261,9 @@ async function startScanning() {
       }
     };
 
-    // Map selection dynamically. On iOS/Safari, specific device IDs are buggy and open the front camera.
-    // We check if the selected option label indicates a back or front camera, and force the exact facingMode.
-    let target;
-    const selectedOption = cameraSelect.options[cameraSelect.selectedIndex];
-    const label = (selectedOption ? selectedOption.text : "").toLowerCase();
-    
-    const isBackLabel = label.includes("back") || label.includes("rear") || label.includes("environment") || label.includes("main") || label.includes("outer");
-    const isFrontLabel = label.includes("front") || label.includes("user") || label.includes("selfie") || label.includes("inner");
-
-    if (currentCameraId === "environment" || (isBackLabel && !isFrontLabel)) {
-      target = { facingMode: { exact: "environment" } };
-    } else if (currentCameraId === "user" || isFrontLabel) {
-      target = { facingMode: { exact: "user" } };
-    } else {
-      target = currentCameraId;
-    }
+    // Strictly force the back camera via facingMode exact environment constraint to bypass mobile browser issues.
+    // Falls back to default webcam dynamically if no physical back camera is present (like on desktops).
+    const target = { facingMode: { exact: "environment" } };
 
     try {
       console.log("Starting camera with target:", target, "and config:", config);
