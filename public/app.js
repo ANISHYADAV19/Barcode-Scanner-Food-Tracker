@@ -317,6 +317,9 @@ async function refreshCameraNamesAfterPermission() {
       const prevVal = cameraSelect.value;
       cameraSelect.innerHTML = "";
       
+      const backId = findBackCamera(freshCameras);
+      const frontId = findFrontCamera(freshCameras);
+
       const defaultBackOpt = document.createElement("option");
       defaultBackOpt.value = "environment";
       defaultBackOpt.text = "Default Back Camera (Recommended)";
@@ -337,6 +340,23 @@ async function refreshCameraNamesAfterPermission() {
       // Restore the active camera selection
       cameraSelect.value = prevVal;
       currentCameraId = cameraSelect.value;
+
+      // Hot-Swap correction: If the user selected the Back Camera, but the browser
+      // opened the front camera instead, stop the stream and restart using the resolved backId string.
+      if (prevVal === "environment" && isScanning && html5QrCode) {
+        const track = html5QrCode.getRunningTrack();
+        if (track) {
+          const settings = (typeof track.getSettings === "function") ? track.getSettings() : {};
+          const currentDeviceId = settings.deviceId;
+          if (currentDeviceId && backId && currentDeviceId !== backId) {
+            console.log(`[Hot-Swap] Switching from camera ${currentDeviceId} to true back camera ${backId}`);
+            currentCameraId = backId;
+            cameraSelect.value = backId;
+            await stopScanning();
+            await startScanning();
+          }
+        }
+      }
     }
   } catch (e) {
     console.warn("Could not refresh camera names:", e);
