@@ -60,8 +60,9 @@
             <h2>Live Camera Viewfinder</h2>
           </div>
           <div class="camera-controls">
-            <select id="camera-select" class="styled-select" aria-label="Select Camera" style="display: none;">
-              <option value="environment">Default Back Camera</option>
+            <select id="camera-select" class="styled-select" aria-label="Select Camera">
+              <option value="environment">Default Back Camera (Recommended)</option>
+              <option value="user">Default Front Camera</option>
             </select>
             <button id="toggle-camera-btn" class="btn btn-primary">Start Camera</button>
           </div>
@@ -280,6 +281,6 @@
   </footer>
 
   <!-- App Script -->
-  <script src="/app.js"></script>
+  <script src="/app.js?v=4"></script>
 </body>
 </html>

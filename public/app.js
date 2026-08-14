@@ -3,6 +3,7 @@ let html5QrCode = null;
 let cameras = [];
 let currentCameraId = null;
 let isScanning = false;
+let hasHotSwapped = false;
 
 let lastScannedBarcode = "";
 let lastScanTime = 0;
@@ -55,49 +56,6 @@ async function handleCameraChange() {
     await stopScanning();
     await startScanning();
   }
-}
-
-// Helper to identify back/rear facing camera ID from device list
-function findBackCamera(devices) {
-  if (!devices || devices.length === 0) return "environment";
-  
-  const backKeywords = ["back", "rear", "environment", "main", "outer", "facing 0"];
-  // 1. Look for clear rear-camera labels
-  for (const device of devices) {
-    const label = (device.label || "").toLowerCase();
-    if (backKeywords.some(keyword => label.includes(keyword))) {
-      return device.id;
-    }
-  }
-  
-  // 2. Filter out anything containing front-facing terms
-  const nonFront = devices.filter(device => {
-    const label = (device.label || "").toLowerCase();
-    return !label.includes("front") && !label.includes("user") && !label.includes("selfie") && !label.includes("inner") && !label.includes("facing 1");
-  });
-  
-  if (nonFront.length > 0) {
-    return nonFront[0].id;
-  }
-  
-  // 3. Fallback: on mobile devices, the last camera returned is typically the back camera
-  return devices[devices.length - 1].id;
-}
-
-// Helper to identify front/user facing camera ID from device list
-function findFrontCamera(devices) {
-  if (!devices || devices.length === 0) return "user";
-  
-  const frontKeywords = ["front", "user", "selfie", "inner", "facing 1"];
-  for (const device of devices) {
-    const label = (device.label || "").toLowerCase();
-    if (frontKeywords.some(keyword => label.includes(keyword))) {
-      return device.id;
-    }
-  }
-  
-  // Default to first camera in list
-  return devices[0].id;
 }
 
 // Camera initialization
@@ -242,43 +200,74 @@ async function startScanning() {
   viewfinderOverlay.style.display = "block";
   isScanning = true;
 
-  try {
-    const config = {
-      fps: 25, // Slightly higher frame rate for snappier feedback
-      qrbox: (width, height) => {
-        // Wide scan window (80% width, 50% height) aligned with CSS viewfinder brackets
-        const qrWidth = Math.floor(width * 0.80);
-        const qrHeight = Math.floor(height * 0.50);
-        return { width: qrWidth, height: qrHeight };
-      },
-      experimentalFeatures: {
-        useBarCodeDetectorIfSupported: true
-      },
-      // Request ideal HD resolution, but do not enforce minimums to prevent crashes on lower-end front/rear cameras
-      videoConstraints: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }
+  // Dynamically resolve target camera constraints and configuration
+  let cameraIdOrConstraints;
+  let videoConstraints = {};
+
+  if (currentCameraId === "environment") {
+    cameraIdOrConstraints = { facingMode: "environment" };
+    videoConstraints = {
+      facingMode: "environment",
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
     };
+  } else if (currentCameraId === "user") {
+    cameraIdOrConstraints = { facingMode: "user" };
+    videoConstraints = {
+      facingMode: "user",
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    };
+  } else {
+    // Specific camera device ID
+    cameraIdOrConstraints = currentCameraId; // Pass the camera ID directly as string
+    videoConstraints = {
+      deviceId: { exact: currentCameraId },
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    };
+  }
 
-    // Strictly force the back camera via facingMode exact environment constraint to bypass mobile browser issues.
-    // Falls back to default webcam dynamically if no physical back camera is present (like on desktops).
-    const target = { facingMode: { exact: "environment" } };
+  const config = {
+    fps: 25, // Higher frame rate for snappier feedback
+    qrbox: (width, height) => {
+      // Wide scan window (80% width, 50% height) aligned with CSS viewfinder brackets
+      const qrWidth = Math.floor(width * 0.80);
+      const qrHeight = Math.floor(height * 0.50);
+      return { width: qrWidth, height: qrHeight };
+    },
+    experimentalFeatures: {
+      useBarCodeDetectorIfSupported: true
+    },
+    videoConstraints: videoConstraints
+  };
 
+  try {
+    console.log("Starting camera with target:", cameraIdOrConstraints, "and config:", config);
+    await html5QrCode.start(
+      cameraIdOrConstraints,
+      config,
+      onBarcodeDetected,
+      (errorMessage) => {
+        // Verbose scan error is normal for frame-by-frame check, ignore
+      }
+    );
+    
+    // Refresh camera device names once permission is granted and camera is active
+    setTimeout(refreshCameraNamesAfterPermission, 500);
+
+  } catch (startErr) {
+    console.warn("Failed to start with primary constraints. Initiating fallback 1 (no custom resolution):", startErr);
+    
     try {
-      console.log("Starting camera with target:", target, "and config:", config);
-      await html5QrCode.start(
-        target,
-        config,
-        onBarcodeDetected,
-        (errorMessage) => {
-          // Verbose scan error is normal for frame-by-frame check, ignore
-        }
-      );
-    } catch (startErr) {
-      console.warn("Failed to start with custom constraints. Initiating fallback default constraints:", startErr);
-      
-      // Fallback: Try with generic facingMode and no custom resolution constraints to guarantee camera starts
+      // Fallback 1: Try without custom width/height constraints
+      let fallbackVideoConstraints = {};
+      if (currentCameraId === "environment" || currentCameraId === "user") {
+        fallbackVideoConstraints = { facingMode: currentCameraId };
+      } else {
+        fallbackVideoConstraints = { deviceId: { exact: currentCameraId } };
+      }
+
       const fallbackConfig = {
         fps: 25,
         qrbox: (width, height) => {
@@ -288,24 +277,50 @@ async function startScanning() {
         },
         experimentalFeatures: {
           useBarCodeDetectorIfSupported: true
-        }
+        },
+        videoConstraints: fallbackVideoConstraints
       };
-      
+
       await html5QrCode.start(
-        { facingMode: "environment" },
+        cameraIdOrConstraints,
         fallbackConfig,
         onBarcodeDetected,
         (errorMessage) => {}
       );
+      
+      setTimeout(refreshCameraNamesAfterPermission, 500);
+
+    } catch (fallbackErr) {
+      console.warn("Failed fallback 1. Initiating ultimate fallback (no videoConstraints override in config):", fallbackErr);
+      
+      try {
+        const ultimateConfig = {
+          fps: 25,
+          qrbox: (width, height) => {
+            const qrWidth = Math.floor(width * 0.80);
+            const qrHeight = Math.floor(height * 0.50);
+            return { width: qrWidth, height: qrHeight };
+          },
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true
+          }
+        };
+
+        await html5QrCode.start(
+          cameraIdOrConstraints,
+          ultimateConfig,
+          onBarcodeDetected,
+          (errorMessage) => {}
+        );
+        
+        setTimeout(refreshCameraNamesAfterPermission, 500);
+
+      } catch (ultimateErr) {
+        console.error("Failed all methods to start scanning", ultimateErr);
+        alert(`Error starting camera: ${ultimateErr.message || ultimateErr}`);
+        await stopScanning();
+      }
     }
-
-    // Refresh devices list once active (permissions are guaranteed to be granted now)
-    setTimeout(refreshCameraNamesAfterPermission, 1000);
-
-  } catch (err) {
-    console.error("Failed to start scanning", err);
-    alert(`Error starting camera: ${err.message || err}`);
-    await stopScanning();
   }
 }
 
@@ -317,9 +332,6 @@ async function refreshCameraNamesAfterPermission() {
       const prevVal = cameraSelect.value;
       cameraSelect.innerHTML = "";
       
-      const backId = findBackCamera(freshCameras);
-      const frontId = findFrontCamera(freshCameras);
-
       const defaultBackOpt = document.createElement("option");
       defaultBackOpt.value = "environment";
       defaultBackOpt.text = "Default Back Camera (Recommended)";
@@ -340,23 +352,6 @@ async function refreshCameraNamesAfterPermission() {
       // Restore the active camera selection
       cameraSelect.value = prevVal;
       currentCameraId = cameraSelect.value;
-
-      // Hot-Swap correction: If the user selected the Back Camera, but the browser
-      // opened the front camera instead, stop the stream and restart using the resolved backId string.
-      if (prevVal === "environment" && isScanning && html5QrCode) {
-        const track = html5QrCode.getRunningTrack();
-        if (track) {
-          const settings = (typeof track.getSettings === "function") ? track.getSettings() : {};
-          const currentDeviceId = settings.deviceId;
-          if (currentDeviceId && backId && currentDeviceId !== backId) {
-            console.log(`[Hot-Swap] Switching from camera ${currentDeviceId} to true back camera ${backId}`);
-            currentCameraId = backId;
-            cameraSelect.value = backId;
-            await stopScanning();
-            await startScanning();
-          }
-        }
-      }
     }
   } catch (e) {
     console.warn("Could not refresh camera names:", e);

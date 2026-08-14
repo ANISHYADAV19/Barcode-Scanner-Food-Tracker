@@ -129,8 +129,8 @@ async def get_scan_history(limit: int = Query(25, description="Number of recent 
 # Serve Frontend static files.
 # Make sure we mount this AFTER defining API endpoints so that they are not overridden.
 # If static folder does not exist, we will create it.
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-if not os.path.exists(static_dir):
-    os.makedirs(static_dir)
+public_dir = os.path.join(os.path.dirname(__file__), "public")
+if not os.path.exists(public_dir):
+    os.makedirs(public_dir)
 
-app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+app.mount("/", StaticFiles(directory=public_dir, html=True), name="static")
