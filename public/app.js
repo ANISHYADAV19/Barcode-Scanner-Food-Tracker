@@ -30,6 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadScanHistory();
   initializeCameraList();
   setupVideoAutoplayObserver();
+  setupThemeToggle();
 });
 
 // Event Listeners setup
@@ -692,5 +693,20 @@ function renderHistoryList(records) {
     card.appendChild(right);
 
     historyList.appendChild(card);
+  });
+}
+
+// Theme Toggle logic
+function setupThemeToggle() {
+  const themeToggleBtn = document.getElementById("theme-toggle-btn");
+  if (!themeToggleBtn) return;
+
+  themeToggleBtn.addEventListener("click", () => {
+    const currentTheme = document.documentElement.getAttribute("data-theme") || "dark";
+    const newTheme = currentTheme === "dark" ? "light" : "dark";
+    
+    document.documentElement.setAttribute("data-theme", newTheme);
+    localStorage.setItem("app_theme", newTheme);
+    console.log(`Theme toggled to: ${newTheme}`);
   });
 }
