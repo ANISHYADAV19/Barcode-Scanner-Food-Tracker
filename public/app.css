@@ -923,7 +923,7 @@ body {
 
 .progress-bar-bg {
   height: 6px;
-  background: hsl(222, 30%, 15%);
+  background: var(--btn-secondary-bg);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -945,7 +945,7 @@ body {
 
 /* Banner boxes */
 .info-banner {
-  background: hsla(222, 30%, 15%, 0.6);
+  background: var(--item-bg);
   border: 1px solid var(--card-border);
   border-radius: var(--border-radius-md);
   padding: 1.25rem;

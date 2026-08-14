@@ -118,17 +118,14 @@ async function initializeCameraList() {
     cameraSelect.innerHTML = "";
     
     if (cameras && cameras.length > 0) {
-      const backId = findBackCamera(cameras);
-      const frontId = findFrontCamera(cameras);
-
-      // Add default constraints options linked directly to resolved device IDs
+      // Add default constraints options linked directly to generic constraints for Safari/iOS compatibility
       const defaultBackOpt = document.createElement("option");
-      defaultBackOpt.value = backId;
+      defaultBackOpt.value = "environment";
       defaultBackOpt.text = "Default Back Camera (Recommended)";
       cameraSelect.appendChild(defaultBackOpt);
 
       const defaultFrontOpt = document.createElement("option");
-      defaultFrontOpt.value = frontId;
+      defaultFrontOpt.value = "user";
       defaultFrontOpt.text = "Default Front Camera";
       cameraSelect.appendChild(defaultFrontOpt);
 
@@ -139,8 +136,8 @@ async function initializeCameraList() {
         cameraSelect.appendChild(option);
       });
       
-      cameraSelect.value = backId;
-      currentCameraId = backId;
+      cameraSelect.value = "environment";
+      currentCameraId = "environment";
     } else {
       addDefaultOptions();
     }
@@ -321,16 +318,13 @@ async function refreshCameraNamesAfterPermission() {
       const prevVal = cameraSelect.value;
       cameraSelect.innerHTML = "";
       
-      const backId = findBackCamera(freshCameras);
-      const frontId = findFrontCamera(freshCameras);
-
       const defaultBackOpt = document.createElement("option");
-      defaultBackOpt.value = backId;
+      defaultBackOpt.value = "environment";
       defaultBackOpt.text = "Default Back Camera (Recommended)";
       cameraSelect.appendChild(defaultBackOpt);
 
       const defaultFrontOpt = document.createElement("option");
-      defaultFrontOpt.value = frontId;
+      defaultFrontOpt.value = "user";
       defaultFrontOpt.text = "Default Front Camera";
       cameraSelect.appendChild(defaultFrontOpt);
 
@@ -342,11 +336,7 @@ async function refreshCameraNamesAfterPermission() {
       });
       
       // Restore the active camera selection
-      if (prevVal === "environment" || prevVal === "user") {
-        cameraSelect.value = prevVal === "environment" ? backId : frontId;
-      } else {
-        cameraSelect.value = prevVal;
-      }
+      cameraSelect.value = prevVal;
       currentCameraId = cameraSelect.value;
     }
   } catch (e) {

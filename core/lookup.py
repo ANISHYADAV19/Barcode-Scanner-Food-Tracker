@@ -28,12 +28,9 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
 )
 
-# Stages 1-4 differ only by hostname and label: same API shape, same parser.
+# Open Food Facts database for retail food products.
 OFF_FAMILY = (
     ("world.openfoodfacts.org", "Open Food Facts"),
-    ("world.openbeautyfacts.org", "Open Beauty Facts"),
-    ("world.openpetfoodfacts.org", "Open Pet Food Facts"),
-    ("world.openproductsfacts.org", "Open Products Facts"),
 )
 
 API_TIMEOUT = 3
@@ -53,12 +50,6 @@ RETAILER_SUFFIXES = (
     " - eBay", " | eBay", " - Amazon", " | Amazon", " - Walmart", " | Walmart",
     " - Flipkart", " | Flipkart", " - BigBasket", " | BigBasket",
 )
-
-# GS1 reserves the 978/979 "Bookland" prefixes for ISBNs. Books get routed to Open
-# Library first because the crowd-sourced OFF databases contain placeholder entries
-# for some ISBNs -- 9780132350884 ("Clean Code") is filed there as a product literally
-# named "Test", which would otherwise win simply by being queried first.
-ISBN_PREFIXES = ("978", "979")
 
 # Crowd-sourced placeholder names to reject outright, so a junk entry does not stop
 # the cascade from reaching a source that actually knows the product.
@@ -85,17 +76,42 @@ def make_session():
 
 def barcode_variants(barcode):
     """
-    Yields the barcode forms worth trying.
-
-    A 12-digit UPC is often stored zero-padded to 13 digits in EAN databases and
-    vice versa, so checking both roughly doubles the hit rate on retail goods.
+    Yields all logical barcode forms worth trying to maximize database hits.
+    
+    Normalizes between UPC (12 digits), EAN-13 (13 digits), EAN-8 (8 digits),
+    and GTIN-14 (14 digits) zero-padding formats.
     """
-    variants = [barcode]
-    if len(barcode) == 12:
-        variants.append(f"0{barcode}")
-    elif len(barcode) == 13 and barcode.startswith("0"):
-        variants.append(barcode[1:])
-    return variants
+    cleaned = re.sub(r'\s+', '', barcode)
+    if not cleaned:
+        return []
+        
+    variants = [cleaned]
+    
+    # 12-digit UPC conversions
+    if len(cleaned) == 12:
+        variants.append(f"0{cleaned}")   # To EAN-13 (1 leading zero)
+        variants.append(f"00{cleaned}")  # To GTIN-14 (2 leading zeros)
+        
+    # 13-digit EAN conversions
+    elif len(cleaned) == 13:
+        variants.append(f"0{cleaned}")   # To GTIN-14 (1 leading zero)
+        if cleaned.startswith("0"):
+            variants.append(cleaned[1:])  # Strip leading zero to check 12-digit UPC
+            
+    # 8-digit EAN conversions
+    elif len(cleaned) == 8:
+        variants.append(f"00000{cleaned}") # Zero-padded to EAN-13
+        variants.append(f"0000{cleaned}")  # Zero-padded to UPC-12
+        
+    # Deduplicate while preserving lookup order
+    seen = set()
+    ordered_variants = []
+    for var in variants:
+        if var not in seen:
+            seen.add(var)
+            ordered_variants.append(var)
+            
+    return ordered_variants
 
 
 def _compose(name, brand):
@@ -156,26 +172,7 @@ def _try_off_family(code, session, host, label):
     return _result(code, name, product.get("brands"), label, nutrition.parse_off_product(product))
 
 
-def _try_open_library(code, session):
-    """Queries Open Library by ISBN. Books carry no nutrition."""
-    url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{code}&format=json&jscmd=data"
-    response = session.get(url, timeout=API_TIMEOUT)
-    if response.status_code != 200:
-        return None
 
-    book = response.json().get(f"ISBN:{code}")
-    if not book:
-        return None
-
-    title = book.get("title")
-    if not title:
-        return None
-
-    authors = ", ".join(a.get("name") for a in book.get("authors", []) if a.get("name"))
-    name = f"{title} by {authors}" if authors else title
-
-    cover = (book.get("cover") or {}).get("medium")
-    return _result(code, name, None, "Open Library", {"image_url": cover})
 
 
 def _try_upcitemdb(code, session):
@@ -247,26 +244,12 @@ def _try_web_search(code, session):
 
 
 def _build_stages(barcode):
-    """
-    Orders the cascade for this barcode.
-
-    Normally the nutrition databases lead, since groceries are the common case. For
-    Bookland (978/979) barcodes Open Library leads instead: it is authoritative for
-    ISBNs, and querying it first avoids losing to a placeholder OFF entry.
-    """
-    off_stages = [
-        (label, lambda code, s, h=host, l=label: _try_off_family(code, s, h, l))
-        for host, label in OFF_FAMILY
-    ]
-    tail = [
+    """Orders the cascade for this barcode."""
+    return [
+        ("Open Food Facts", lambda code, s: _try_off_family(code, s, "world.openfoodfacts.org", "Open Food Facts")),
         ("UPCitemdb", _try_upcitemdb),
         ("Web Search (DDG)", _try_web_search),
     ]
-    open_library = ("Open Library", _try_open_library)
-
-    if barcode[:3] in ISBN_PREFIXES:
-        return [open_library] + off_stages + tail
-    return off_stages + [open_library] + tail
 
 
 def lookup_product(barcode, session=None, trace=False):
