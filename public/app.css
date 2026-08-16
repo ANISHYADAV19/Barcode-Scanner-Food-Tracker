@@ -19,6 +19,8 @@
   --color-primary: hsl(215, 90%, 52%);
   --color-primary-hover: hsl(215, 90%, 42%);
   --color-primary-glow: hsla(215, 90%, 52%, 0.15);
+  --color-primary-gradient-end: hsl(200, 100%, 48%);
+  --color-primary-gradient-end-hover: hsl(200, 100%, 42%);
   
   --color-accent: hsl(255, 65%, 55%);
   --color-accent-hover: hsl(255, 65%, 45%);
@@ -73,24 +75,26 @@
 
 /* Premium Dark Theme Override */
 :root[data-theme="dark"] {
-  --bg-base: hsl(222, 47%, 7%);
-  --bg-gradient-start: hsl(222, 47%, 7%);
-  --bg-gradient-end: hsl(222, 40%, 12%);
+  --bg-base: hsl(0, 0%, 4%);
+  --bg-gradient-start: hsl(0, 0%, 3%);
+  --bg-gradient-end: hsl(0, 0%, 7%);
   
-  --card-bg: hsla(222, 40%, 15%, 0.45);
-  --card-border: hsla(222, 30%, 25%, 0.35);
-  --card-border-glow: hsla(190, 100%, 50%, 0.15);
+  --card-bg: hsla(0, 0%, 9%, 0.75);
+  --card-border: hsla(0, 0%, 18%, 0.5);
+  --card-border-glow: hsla(150, 85%, 45%, 0.06);
   
-  --text-primary: hsl(210, 40%, 98%);
-  --text-secondary: hsl(215, 20%, 75%);
-  --text-muted: hsl(215, 16%, 55%);
+  --text-primary: hsl(0, 0%, 96%);
+  --text-secondary: hsl(0, 0%, 80%);
+  --text-muted: hsl(0, 0%, 58%);
 
-  --color-primary: hsl(190, 100%, 48%);
-  --color-primary-hover: hsl(190, 100%, 40%);
-  --color-primary-glow: hsla(190, 100%, 48%, 0.3);
+  --color-primary: hsl(150, 85%, 45%);
+  --color-primary-hover: hsl(150, 85%, 38%);
+  --color-primary-glow: hsla(150, 85%, 45%, 0.25);
+  --color-primary-gradient-end: hsl(165, 85%, 42%);
+  --color-primary-gradient-end-hover: hsl(165, 85%, 36%);
   
-  --color-accent: hsl(270, 90%, 65%);
-  --color-accent-hover: hsl(270, 85%, 55%);
+  --color-accent: hsl(280, 80%, 65%);
+  --color-accent-hover: hsl(280, 80%, 55%);
   
   --color-success: hsl(142, 70%, 45%);
   --color-success-bg: hsla(142, 70%, 45%, 0.15);
@@ -101,22 +105,22 @@
   --color-error: hsl(25, 95%, 55%);
   --color-error-bg: hsla(25, 95%, 55%, 0.15);
   
-  --shadow-premium: 0 8px 32px 0 rgba(0, 0, 0, 0.4);
-  --shadow-hover: 0 12px 40px 0 hsla(0, 0%, 0%, 0.5), 0 0 20px 0 hsla(190, 100%, 50%, 0.05);
-  --item-bg: hsla(222, 35%, 11%, 0.4);
-  --item-bg-hover: hsla(222, 30%, 16%, 0.6);
-  --scrollbar-thumb: hsla(222, 20%, 30%, 0.6);
-  --input-bg: hsla(222, 30%, 15%, 0.5);
-  --input-bg-focus: hsla(222, 30%, 25%, 0.8);
-  --btn-secondary-bg: hsla(222, 30%, 20%, 0.5);
-  --btn-secondary-bg-hover: hsla(222, 30%, 30%, 0.8);
-  --btn-primary-text: hsl(222, 50%, 6%);
-  --styled-select-bg: hsl(222, 35%, 12%);
-  --divider-color: hsla(222, 30%, 20%, 0.5);
-  --detail-bg: hsl(222, 35%, 12%);
+  --shadow-premium: 0 8px 32px 0 rgba(0, 0, 0, 0.55);
+  --shadow-hover: 0 12px 40px 0 rgba(0, 0, 0, 0.75), 0 0 20px 0 hsla(150, 85%, 45%, 0.05);
+  --item-bg: hsla(0, 0%, 14%, 0.5);
+  --item-bg-hover: hsla(0, 0%, 18%, 0.7);
+  --scrollbar-thumb: hsla(0, 0%, 25%, 0.6);
+  --input-bg: hsla(0, 0%, 11%, 0.8);
+  --input-bg-focus: hsla(0, 0%, 16%, 0.9);
+  --btn-secondary-bg: hsla(0, 0%, 14%, 0.6);
+  --btn-secondary-bg-hover: hsla(0, 0%, 20%, 0.8);
+  --btn-primary-text: hsl(0, 0%, 6%);
+  --styled-select-bg: hsl(0, 0%, 10%);
+  --divider-color: hsla(0, 0%, 16%, 0.5);
+  --detail-bg: hsl(0, 0%, 10%);
   --body-radial-gradient: radial-gradient(circle at 50% 0%, var(--bg-gradient-end), var(--bg-gradient-start));
-  --header-border: hsla(222, 30%, 20%, 0.4);
-  --footer-border: hsla(222, 30%, 20%, 0.2);
+  --header-border: hsla(0, 0%, 14%, 0.4);
+  --footer-border: hsla(0, 0%, 14%, 0.2);
   --logo-gradient-start: #ffffff;
 }
 
@@ -377,11 +381,11 @@ body {
 .viewfinder-container {
   width: 100%;
   aspect-ratio: 16 / 10;
-  background-color: hsl(222, 50%, 4%);
+  background-color: hsl(0, 0%, 4%);
   border-radius: var(--border-radius-md);
   position: relative;
   overflow: hidden;
-  border: 1px solid hsla(222, 30%, 15%, 0.8);
+  border: 1px solid var(--card-border);
 }
 
 /* HTML5 QR Code hidden/styled internally */
@@ -422,7 +426,7 @@ body {
   background: radial-gradient(
     circle, 
     transparent 45%, 
-    rgba(7, 10, 19, 0.6) 80%
+    rgba(0, 0, 0, 0.6) 80%
   );
 }
 
@@ -485,7 +489,7 @@ body {
 
 .scan-instructions-overlay p {
   display: inline-block;
-  background: rgba(11, 15, 25, 0.85);
+  background: rgba(10, 10, 10, 0.85);
   padding: 0.4rem 1rem;
   border-radius: 20px;
   font-size: 0.8rem;
@@ -505,14 +509,13 @@ body {
   }
 }
 
-/* Scanner Status Overlay (Spinners) */
 .scanner-status-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(11, 15, 25, 0.85);
+  background: rgba(10, 10, 10, 0.85);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -616,14 +619,14 @@ body {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, var(--color-primary), hsl(200, 100%, 48%));
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-gradient-end));
   color: var(--btn-primary-text);
   border: none;
   box-shadow: 0 4px 12px var(--color-primary-glow);
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, var(--color-primary-hover), hsl(200, 100%, 42%));
+  background: linear-gradient(135deg, var(--color-primary-hover), var(--color-primary-gradient-end-hover));
   box-shadow: 0 6px 16px var(--color-primary-glow);
   transform: translateY(-1px);
 }
@@ -744,9 +747,9 @@ body {
 }
 
 .source-badge {
-  background: hsla(190, 100%, 48%, 0.1);
+  background: var(--color-primary-glow);
   color: var(--color-primary);
-  border: 1px solid rgba(0, 242, 254, 0.2);
+  border: 1px solid var(--color-primary-glow);
   padding: 0.25rem 0.75rem;
   border-radius: 20px;
   font-size: 0.75rem;
@@ -765,7 +768,7 @@ body {
   width: 90px;
   height: 90px;
   border-radius: var(--border-radius-md);
-  background: hsl(222, 35%, 12%);
+  background: var(--item-bg);
   border: 1px solid var(--card-border);
   overflow: hidden;
   display: flex;
@@ -828,13 +831,14 @@ body {
   font-family: var(--font-display);
   font-size: 0.8rem;
   font-weight: 600;
-  color: #fff;
-  background: hsl(222, 20%, 25%);
+  color: var(--text-primary);
+  background: var(--item-bg-hover);
   padding: 0.35rem 0.75rem;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  border: 1px solid var(--card-border);
 }
 
 .badge-nutriscore span {
@@ -855,13 +859,14 @@ body {
   font-family: var(--font-display);
   font-size: 0.8rem;
   font-weight: 600;
-  color: #fff;
-  background: hsl(222, 20%, 25%);
+  color: var(--text-primary);
+  background: var(--item-bg-hover);
   padding: 0.35rem 0.75rem;
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
+  border: 1px solid var(--card-border);
 }
 
 .badge-nova span {
