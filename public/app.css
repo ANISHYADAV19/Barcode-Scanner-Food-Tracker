@@ -212,53 +212,92 @@ body {
   font-weight: 400;
 }
 
-/* Theme Toggle Button */
-.theme-toggle-btn {
+/* Theme Toggle Switch */
+.theme-toggle-container {
   position: absolute;
   right: 0;
   top: 50%;
   transform: translateY(-50%);
+  z-index: 100;
+}
+
+.theme-toggle-switch {
   background: var(--btn-secondary-bg);
   border: 1px solid var(--card-border);
-  color: var(--text-primary);
-  padding: 0.55rem;
-  border-radius: 50%;
+  border-radius: 30px;
   cursor: pointer;
+  display: flex;
+  position: relative;
+  padding: 3px;
+  transition: var(--transition-smooth);
+  outline: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  user-select: none;
+  width: 150px;
+  height: 36px;
+}
+
+.theme-toggle-switch:hover {
+  border-color: var(--color-primary);
+}
+
+.theme-option {
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  font-family: var(--font-body);
+  font-size: 0.825rem;
+  font-weight: 700;
+  color: var(--text-muted);
   transition: var(--transition-smooth);
-  width: 2.35rem;
-  height: 2.35rem;
-  outline: none;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  z-index: 2;
 }
 
-.theme-toggle-btn:hover {
-  background: var(--btn-secondary-bg-hover);
-  border-color: var(--color-primary);
+.theme-option svg {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.25;
+}
+
+.theme-slider {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: calc(50% - 3px);
+  height: calc(100% - 6px);
+  border-radius: 20px;
+  background: var(--card-bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s ease;
+  z-index: 1;
+  border: 1px solid var(--card-border);
+}
+
+/* Light mode active option style */
+:root[data-theme="light"] .light-option {
   color: var(--color-primary);
 }
-
-.theme-toggle-btn .sun-icon {
-  display: none;
-}
-.theme-toggle-btn .moon-icon {
-  display: block;
+:root[data-theme="light"] .theme-slider {
+  transform: translateX(0);
 }
 
-:root[data-theme="dark"] .theme-toggle-btn .sun-icon {
-  display: block;
+/* Dark mode active option style */
+:root[data-theme="dark"] .dark-option {
+  color: var(--color-primary);
 }
-:root[data-theme="dark"] .theme-toggle-btn .moon-icon {
-  display: none;
+:root[data-theme="dark"] .theme-slider {
+  transform: translateX(100%);
 }
 
 @media (max-width: 768px) {
-  .theme-toggle-btn {
+  .theme-toggle-container {
     position: static;
     transform: none;
     margin: 1.25rem auto 0;
+    display: flex;
+    justify-content: center;
   }
 }
 

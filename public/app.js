@@ -730,12 +730,17 @@ function setupThemeToggle() {
   const themeToggleBtn = document.getElementById("theme-toggle-btn");
   if (!themeToggleBtn) return;
 
+  // Set initial accessibility state
+  const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
+  themeToggleBtn.setAttribute("aria-checked", currentTheme === "dark" ? "true" : "false");
+
   themeToggleBtn.addEventListener("click", () => {
-    const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
-    const newTheme = currentTheme === "light" ? "dark" : "light";
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark";
+    const newTheme = isDark ? "light" : "dark";
     
     document.documentElement.setAttribute("data-theme", newTheme);
     localStorage.setItem("app_theme", newTheme);
+    themeToggleBtn.setAttribute("aria-checked", !isDark ? "true" : "false");
     console.log(`Theme toggled to: ${newTheme}`);
   });
 }
