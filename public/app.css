@@ -716,26 +716,35 @@ body {
 
 .input-with-btn {
   display: flex;
-  gap: 0.5rem;
+  background: var(--input-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-sm);
+  overflow: hidden;
+  transition: var(--transition-smooth);
+}
+
+.input-with-btn:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-glow);
 }
 
 .input-with-btn input {
   flex: 1;
-  background: var(--input-bg);
-  border: 1px solid var(--card-border);
+  background: transparent;
+  border: none;
   color: var(--text-primary);
   padding: 0.65rem 1rem;
-  border-radius: var(--border-radius-sm);
   outline: none;
   font-family: var(--font-body);
   font-size: 0.9rem;
   letter-spacing: 0.5px;
-  transition: var(--transition-smooth);
 }
 
-.input-with-btn input:focus {
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 2px var(--color-primary-glow);
+.input-with-btn .btn {
+  border: none;
+  border-radius: 0;
+  padding: 0.65rem 1.5rem;
+  font-size: 0.85rem;
 }
 
 /* Product Detail View */
