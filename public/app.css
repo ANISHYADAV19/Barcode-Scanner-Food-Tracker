@@ -588,7 +588,7 @@ body {
   padding: 0.5rem 1rem;
   border-radius: var(--border-radius-sm);
   font-family: var(--font-body);
-  font-size: 0.85rem;
+  font-size: 16px;
   outline: none;
   cursor: pointer;
   transition: var(--transition-smooth);
@@ -736,7 +736,7 @@ body {
   padding: 0.65rem 1rem;
   outline: none;
   font-family: var(--font-body);
-  font-size: 0.9rem;
+  font-size: 16px;
   letter-spacing: 0.5px;
 }
 
@@ -1189,4 +1189,45 @@ body {
 /* Utility Hidden */
 .hidden {
   display: none !important;
+}
+
+/* Mobile Responsive Overrides */
+@media (max-width: 580px) {
+  .app-header {
+    padding: 1.25rem 1rem 0.75rem;
+  }
+  
+  .logo h1 {
+    font-size: 1.65rem;
+  }
+  
+  .logo-icon {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .app-container {
+    margin: 1rem auto;
+    padding: 0 0.75rem;
+    gap: 1.25rem;
+  }
+
+  .card {
+    padding: 1.15rem;
+    border-radius: var(--border-radius-md);
+  }
+
+  .camera-controls {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 0.5rem;
+  }
+
+  .camera-controls .styled-select,
+  .camera-controls .btn {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+  }
 }
