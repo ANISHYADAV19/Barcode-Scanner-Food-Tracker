@@ -131,6 +131,14 @@
   padding: 0;
 }
 
+html, body {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
 body {
   font-family: var(--font-body);
   background: var(--body-radial-gradient);
@@ -140,7 +148,6 @@ body {
   flex-direction: column;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
 }
 
 /* Scrollbar styling */
@@ -897,9 +904,9 @@ body {
   gap: 1rem;
   margin-bottom: 2rem;
   padding: 1.25rem;
-  background: hsla(222, 35%, 10%, 0.5);
+  background: var(--item-bg);
   border-radius: var(--border-radius-md);
-  border: 1px solid hsla(222, 30%, 15%, 0.5);
+  border: 1px solid var(--card-border);
 }
 
 .metadata-item {
