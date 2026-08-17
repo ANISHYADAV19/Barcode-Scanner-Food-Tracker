@@ -248,9 +248,9 @@ async function startScanning() {
   const config = {
     fps: 25, // Higher frame rate for snappier feedback
     qrbox: (width, height) => {
-      // Wide scan window (80% width, 50% height) aligned with CSS viewfinder brackets
+      // Wide scan window locked to a 2.5:1 rectangular aspect ratio aligned with CSS scanner-box
       const qrWidth = Math.floor(width * 0.80);
-      const qrHeight = Math.floor(height * 0.50);
+      const qrHeight = Math.min(Math.floor(qrWidth / 2.5), height - 20);
       return { width: qrWidth, height: qrHeight };
     },
     experimentalFeatures: {
@@ -291,8 +291,9 @@ async function startScanning() {
       const fallbackConfig = {
         fps: 25,
         qrbox: (width, height) => {
+          // Wide scan window locked to a 2.5:1 rectangular aspect ratio aligned with CSS scanner-box
           const qrWidth = Math.floor(width * 0.80);
-          const qrHeight = Math.floor(height * 0.50);
+          const qrHeight = Math.min(Math.floor(qrWidth / 2.5), height - 20);
           return { width: qrWidth, height: qrHeight };
         },
         experimentalFeatures: {
@@ -320,8 +321,9 @@ async function startScanning() {
         const ultimateConfig = {
           fps: 25,
           qrbox: (width, height) => {
+            // Wide scan window locked to a 2.5:1 rectangular aspect ratio aligned with CSS scanner-box
             const qrWidth = Math.floor(width * 0.80);
-            const qrHeight = Math.floor(height * 0.50);
+            const qrHeight = Math.min(Math.floor(qrWidth / 2.5), height - 20);
             return { width: qrWidth, height: qrHeight };
           },
           experimentalFeatures: {

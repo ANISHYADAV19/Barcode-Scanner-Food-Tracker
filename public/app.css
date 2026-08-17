@@ -437,6 +437,18 @@ body {
   );
 }
 
+.scanner-box {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 80%;
+  aspect-ratio: 2.5 / 1; /* Locked wide aspect ratio */
+  max-width: 440px;
+  max-height: 160px;
+  z-index: 12;
+}
+
 /* Target Area Brackets */
 .corner-bracket {
   position: absolute;
@@ -447,29 +459,29 @@ body {
 }
 
 .top-left {
-  top: 25%;
-  left: 10%;
+  top: 0;
+  left: 0;
   border-right: none;
   border-bottom: none;
 }
 
 .top-right {
-  top: 25%;
-  right: 10%;
+  top: 0;
+  right: 0;
   border-left: none;
   border-bottom: none;
 }
 
 .bottom-left {
-  bottom: 25%;
-  left: 10%;
+  bottom: 0;
+  left: 0;
   border-right: none;
   border-top: none;
 }
 
 .bottom-right {
-  bottom: 25%;
-  right: 10%;
+  bottom: 0;
+  right: 0;
   border-left: none;
   border-top: none;
 }
@@ -477,13 +489,21 @@ body {
 /* Laser sweep line */
 .laser-line {
   position: absolute;
-  top: 25%;
-  left: 10%;
-  right: 10%;
+  left: 3%;
+  right: 3%;
   height: 2px;
   background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
   box-shadow: 0 0 12px 2px var(--color-primary-glow);
   animation: laserSweep 3s infinite ease-in-out;
+}
+
+@keyframes laserSweep {
+  0%, 100% {
+    top: 5%;
+  }
+  50% {
+    top: 95%;
+  }
 }
 
 .scan-instructions-overlay {
@@ -506,16 +526,6 @@ body {
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
-
-@keyframes laserSweep {
-  0%, 100% {
-    top: 25%;
-  }
-  50% {
-    top: 75%;
-  }
-}
-
 .scanner-status-overlay {
   position: absolute;
   top: 0;
