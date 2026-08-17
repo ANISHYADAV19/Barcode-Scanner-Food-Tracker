@@ -209,51 +209,58 @@ def _run_decode_on_image(image_gray):
     return decoded_codes
 
 
-def _decode_multipass(gray):
+def _decode_multipass(gray, tick=None):
     """
     Runs the multi-pass image processing pipeline over a grayscale image.
     Enhances scanning stability under poor lighting, motion blur, and low resolution.
     Coordinates are returned in the coordinate space of the image passed in.
+
+    Optimized using lazy candidate evaluation and frame staggering:
+    - PASS 1 (Standard) is checked on every frame.
+    - PASS 2 (Threshold) and PASS 4 (Upscale) are checked on even frames (or if tick is None).
+    - PASS 3 (Sharpen) is checked on odd frames (or if tick is None).
     """
     # PASS 1: Standard Grayscale Frame
     barcodes = _run_decode_on_image(gray)
     if barcodes:
         return barcodes
 
-    # PASS 2: Binarization (Otsu's Thresholding for contrast)
-    try:
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-        barcodes = _run_decode_on_image(thresh)
-        if barcodes:
-            return barcodes
-    except Exception:
-        pass
+    # PASS 2: Binarization (Otsu's Thresholding for contrast) - Even frames
+    if tick is None or tick % 2 == 0:
+        try:
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            barcodes = _run_decode_on_image(thresh)
+            if barcodes:
+                return barcodes
+        except Exception:
+            pass
 
-    # PASS 3: Image Sharpening (fixes motion blur)
-    try:
-        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
-        sharpened = cv2.filter2D(gray, -1, kernel)
-        barcodes = _run_decode_on_image(sharpened)
-        if barcodes:
-            return barcodes
-    except Exception:
-        pass
+    # PASS 3: Image Sharpening (fixes motion blur) - Odd frames
+    if tick is None or tick % 2 == 1:
+        try:
+            kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+            sharpened = cv2.filter2D(gray, -1, kernel)
+            barcodes = _run_decode_on_image(sharpened)
+            if barcodes:
+                return barcodes
+        except Exception:
+            pass
 
-    # PASS 4: Upscaling (zoom for small/distant barcodes). The scale adapts to the
-    # image width, so a tightly cropped scan window gets the zoom it needs.
-    try:
-        scale = min(3.0, max(1.5, DECODE_TARGET_WIDTH / float(gray.shape[1])))
-        upscaled = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        barcodes = _run_decode_on_image(upscaled)
-        if barcodes:
-            return _remap_barcodes(barcodes, scale=scale)
-    except Exception:
-        pass
+    # PASS 4: Upscaling (zoom for small/distant barcodes) - Even frames
+    if tick is None or tick % 2 == 0:
+        try:
+            scale = min(3.0, max(1.5, DECODE_TARGET_WIDTH / float(gray.shape[1])))
+            upscaled = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+            barcodes = _run_decode_on_image(upscaled)
+            if barcodes:
+                return _remap_barcodes(barcodes, scale=scale)
+        except Exception:
+            pass
 
     return []
 
 
-def decode_frame(frame, roi=None):
+def decode_frame(frame, roi=None, tick=None):
     """
     Decodes barcodes/QR codes from a frame.
 
@@ -268,7 +275,7 @@ def decode_frame(frame, roi=None):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
 
     if roi is None:
-        return _decode_multipass(gray)
+        return _decode_multipass(gray, tick=tick)
 
     frame_h, frame_w = gray.shape[:2]
     roi_x, roi_y, roi_w, roi_h = roi
@@ -281,7 +288,7 @@ def decode_frame(frame, roi=None):
     if cropped.size == 0:
         return []
 
-    barcodes = _decode_multipass(cropped)
+    barcodes = _decode_multipass(cropped, tick=tick)
     return _remap_barcodes(barcodes, offset_x=roi_x, offset_y=roi_y)
 
 

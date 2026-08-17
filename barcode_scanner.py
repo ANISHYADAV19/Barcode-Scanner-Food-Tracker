@@ -277,34 +277,74 @@ def _decode_candidates(gray):
     return candidates
 
 
-def _decode_multipass(gray):
+def _decode_multipass(gray, tick=None):
     """
     Runs the decode pipeline over a grayscale image, returning at the first read.
     Coordinates come back in the coordinate space of the image passed in.
 
-    The two engines are driven differently because their costs differ sharply.
-    pyzbar reads 1D and QR in a single call, so it simply walks the candidates.
-    OpenCV's QR detector costs ~15ms per call at any image size - four times the
-    1D detector - so it runs once, and only after the whole 1D sweep comes up empty.
+    Optimized using lazy candidate evaluation and frame staggering:
+    - Original grayscale image is always checked on every frame.
+    - Heavy operations (threshold/sharpening and various resizes) are staggered
+      across alternating frames when a tick is provided.
+    - If tick is None (e.g. for static tests), all candidates are processed.
     """
-    candidates = _decode_candidates(gray)
+    # 1. Always try the original grayscale image first (fastest and most likely)
+    found = _decode_pyzbar(gray) if PYZBAR_AVAILABLE else _decode_opencv_1d(gray)
+    if found:
+        return found
 
-    if PYZBAR_AVAILABLE:
-        for image, scale in candidates:
-            found = _decode_pyzbar(image)
+    # 2. Try threshold (even ticks or None) or sharpening (odd ticks or None)
+    if tick is None or tick % 2 == 0:
+        try:
+            _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            found = _decode_pyzbar(thresh) if PYZBAR_AVAILABLE else _decode_opencv_1d(thresh)
+            if found:
+                return found
+        except Exception:
+            pass
+
+    if tick is None or tick % 2 == 1:
+        try:
+            kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
+            sharpened = cv2.filter2D(gray, -1, kernel)
+            found = _decode_pyzbar(sharpened) if PYZBAR_AVAILABLE else _decode_opencv_1d(sharpened)
+            if found:
+                return found
+        except Exception:
+            pass
+
+    # 3. Try scale ladder (staggered to reduce CPU load when no code is present)
+    width = float(gray.shape[1])
+    if tick is None:
+        scales_to_try = DECODE_SCALE_WIDTHS
+    elif tick % 2 == 0:
+        scales_to_try = (620, 300, 160)
+    else:
+        scales_to_try = (420, 220, 1000)
+
+    for target in scales_to_try:
+        scale = target / width
+        if abs(scale - 1.0) < 0.08 or not (0.12 <= scale <= 3.0):
+            continue  # too close to the native pass, or an absurd resize
+        try:
+            interp = cv2.INTER_AREA if scale < 1.0 else cv2.INTER_CUBIC
+            resized = cv2.resize(gray, (0, 0), fx=scale, fy=scale, interpolation=interp)
+            found = _decode_pyzbar(resized) if PYZBAR_AVAILABLE else _decode_opencv_1d(resized)
             if found:
                 return _remap_barcodes(found, scale=scale)
-        return []
+        except Exception:
+            pass
 
-    for image, scale in candidates:
-        found = _decode_opencv_1d(image)
+    # 4. If using OpenCV fallback, check QR code on original gray frame
+    if not PYZBAR_AVAILABLE:
+        found = _decode_opencv_qr(gray)
         if found:
-            return _remap_barcodes(found, scale=scale)
+            return found
 
-    return _decode_opencv_qr(gray)
+    return []
 
 
-def decode_frame(frame, roi=None):
+def decode_frame(frame, roi=None, tick=None):
     """
     Decodes barcodes/QR codes from a frame.
 
@@ -316,7 +356,7 @@ def decode_frame(frame, roi=None):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
     if roi is None:
-        return _decode_multipass(gray)
+        return _decode_multipass(gray, tick=tick)
 
     frame_h, frame_w = gray.shape[:2]
     roi_x, roi_y, roi_w, roi_h = roi
@@ -329,7 +369,7 @@ def decode_frame(frame, roi=None):
     if cropped.size == 0:
         return []
 
-    barcodes = _decode_multipass(cropped)
+    barcodes = _decode_multipass(cropped, tick=tick)
     return _remap_barcodes(barcodes, offset_x=roi_x, offset_y=roi_y)
 
 
@@ -742,7 +782,12 @@ def main():
     print("Controls:  [Q] quit   [+/-] resize box   [F] toggle full-frame   [R] reset box\n")
 
     lookup_manager = BarcodeLookupManager()
-    cap = cv2.VideoCapture(0)
+    import sys
+    if sys.platform == 'win32':
+        # cv2.CAP_DSHOW prevents MSMF from padding the frame with black edges
+        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+    else:
+        cap = cv2.VideoCapture(0)
 
     if not cap.isOpened():
         print("[Critical Error] Could not access the webcam feed.")
@@ -774,7 +819,7 @@ def main():
             roi = None if scan_whole_frame else get_roi_rect(frame.shape, w_ratio, h_ratio)
 
             # Decode from the untouched frame, before any overlay is painted on it
-            barcodes = decode_frame(frame, roi)
+            barcodes = decode_frame(frame, roi, tick)
 
             detections = []
             for barcode in barcodes:

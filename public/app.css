@@ -405,7 +405,7 @@ body {
 #reader video {
   width: 100% !important;
   height: 100% !important;
-  object-fit: contain !important;
+  object-fit: cover !important;
   border: 1px solid transparent; /* Forces Safari layout repaint to prevent black screen */
 }
 

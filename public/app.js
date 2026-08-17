@@ -169,6 +169,23 @@ function setupVideoAutoplayObserver() {
   }
 }
 
+// Dynamically matches the viewfinder container's aspect ratio to the active video feed
+function adjustViewfinderAspectRatio() {
+  const videoEl = document.querySelector("#reader video");
+  const container = document.querySelector(".viewfinder-container");
+  if (videoEl && container) {
+    const updateRatio = () => {
+      if (videoEl.videoWidth && videoEl.videoHeight) {
+        container.style.aspectRatio = `${videoEl.videoWidth} / ${videoEl.videoHeight}`;
+        console.log(`[Viewfinder] Aspect ratio dynamically adjusted to: ${videoEl.videoWidth} / ${videoEl.videoHeight}`);
+      }
+    };
+    videoEl.addEventListener("loadedmetadata", updateRatio);
+    // Call immediately if metadata is already loaded
+    updateRatio();
+  }
+}
+
 async function startScanning() {
   if (typeof Html5Qrcode === "undefined") {
     alert("The scanner library is still loading. Please try again in a moment.");
@@ -253,6 +270,9 @@ async function startScanning() {
       }
     );
     
+    // Dynamically adjust aspect ratio to match webcam
+    adjustViewfinderAspectRatio();
+
     // Refresh camera device names once permission is granted and camera is active
     setTimeout(refreshCameraNamesAfterPermission, 500);
 
@@ -288,6 +308,9 @@ async function startScanning() {
         (errorMessage) => {}
       );
       
+      // Dynamically adjust aspect ratio to match webcam fallback
+      adjustViewfinderAspectRatio();
+
       setTimeout(refreshCameraNamesAfterPermission, 500);
 
     } catch (fallbackErr) {
@@ -313,6 +336,9 @@ async function startScanning() {
           (errorMessage) => {}
         );
         
+        // Dynamically adjust aspect ratio to match webcam fallback
+        adjustViewfinderAspectRatio();
+
         setTimeout(refreshCameraNamesAfterPermission, 500);
 
       } catch (ultimateErr) {
@@ -367,6 +393,12 @@ async function stopScanning() {
     }
   }
   
+  // Reset aspect ratio to default
+  const container = document.querySelector(".viewfinder-container");
+  if (container) {
+    container.style.aspectRatio = "16 / 10";
+  }
+
   toggleCameraBtn.textContent = "Start Camera";
   toggleCameraBtn.classList.remove("btn-secondary");
   toggleCameraBtn.classList.add("btn-primary");
