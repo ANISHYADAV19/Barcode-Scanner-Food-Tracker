@@ -7,10 +7,8 @@ web API can call it directly per request while the desktop app wraps it in
 `BarcodeLookupManager` for background, non-blocking lookups.
 
 Cascade order (first hit wins):
-  1-4. Open Food / Beauty / Pet Food / Products Facts  -- full nutrition
-  5.   Open Library (ISBN)                             -- name only
-  6.   UPCitemdb (general retail)                      -- name only
-  7.   DuckDuckGo HTML search                          -- name only, best effort
+  1.   Open Food Facts                                 -- full nutrition
+  2.   Open Pet Food Facts                             -- full nutrition
 """
 
 import html as html_parser
@@ -34,22 +32,6 @@ OFF_FAMILY = (
 )
 
 API_TIMEOUT = 3
-SEARCH_TIMEOUT = 4
-
-# Search results whose titles look like barcode-lookup directories rather than
-# actual products. Without this the web fallback "resolves" every unknown code to
-# a database landing page.
-IGNORE_KEYWORDS = (
-    "barcode lookup", "upc lookup", "ean lookup", "barcode search",
-    "upc search", "ean search", "barcode database", "product database",
-    "search by barcode", "what is this barcode", "barcode detail", "lookup barcode",
-    "barcode locator", "ean-db",
-)
-
-RETAILER_SUFFIXES = (
-    " - eBay", " | eBay", " - Amazon", " | Amazon", " - Walmart", " | Walmart",
-    " - Flipkart", " | Flipkart", " - BigBasket", " | BigBasket",
-)
 
 # Crowd-sourced placeholder names to reject outright, so a junk entry does not stop
 # the cascade from reaching a source that actually knows the product.
@@ -175,80 +157,11 @@ def _try_off_family(code, session, host, label):
 
 
 
-def _try_upcitemdb(code, session):
-    """Queries the UPCitemdb trial endpoint (rate-limited, no key required)."""
-    url = f"https://api.upcitemdb.com/prod/trial/lookup?upc={code}"
-    response = session.get(url, timeout=API_TIMEOUT)
-    if response.status_code != 200:
-        return None
-
-    data = response.json()
-    if data.get("code") != "OK" or not data.get("total"):
-        return None
-
-    items = data.get("items") or []
-    if not items:
-        return None
-
-    item = items[0]
-    title = (item.get("title") or "").strip()
-    if not title:
-        return None
-
-    images = item.get("images") or []
-    return _result(code, title, item.get("brand"), "UPCitemdb",
-                   {"image_url": images[0] if images else None})
-
-
-def _try_web_search(code, session):
-    """
-    Last-resort DuckDuckGo HTML scrape for regional or niche items.
-
-    Best effort by nature: this parses result markup, so a layout change upstream
-    makes it quietly stop finding names rather than fail loudly.
-    """
-    response = session.get(f"https://html.duckduckgo.com/html/?q={code}", timeout=SEARCH_TIMEOUT)
-    if response.status_code != 200:
-        return None
-
-    titles = re.findall(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', response.text, re.DOTALL)
-    snippets = re.findall(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', response.text, re.DOTALL)
-
-    def strip_markup(raw):
-        return html_parser.unescape(re.sub(r'<[^>]+>', '', raw).strip())
-
-    candidates = []
-    for raw_title, raw_snippet in zip(titles, snippets):
-        title = strip_markup(raw_title)
-        snippet = strip_markup(raw_snippet)
-
-        if any(keyword in title.lower() for keyword in IGNORE_KEYWORDS):
-            continue
-
-        for suffix in RETAILER_SUFFIXES:
-            if title.lower().endswith(suffix.lower()):
-                title = title[:-len(suffix)]
-        title = re.sub(r'\s+', ' ', title).strip()
-
-        # Results that quote the barcode itself are far likelier to be the product
-        if code in title or code in snippet:
-            candidates.append((0, title))
-        elif len(title) > 5 and not title.replace('.', '', 1).isdigit():
-            candidates.append((1, title))
-
-    if not candidates:
-        return None
-
-    candidates.sort(key=lambda pair: pair[0])
-    return _result(code, candidates[0][1], None, "Web Search (DDG)")
-
-
 def _build_stages(barcode):
     """Orders the cascade for this barcode."""
     return [
         ("Open Food Facts", lambda code, s: _try_off_family(code, s, "world.openfoodfacts.org", "Open Food Facts")),
-        ("UPCitemdb", _try_upcitemdb),
-        ("Web Search (DDG)", _try_web_search),
+        ("Open Pet Food Facts", lambda code, s: _try_off_family(code, s, "world.openpetfoodfacts.org", "Open Pet Food Facts")),
     ]
 
 

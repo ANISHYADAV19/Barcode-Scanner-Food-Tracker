@@ -444,25 +444,7 @@ class BarcodeLookupManager:
                 except Exception as e:
                     print(f"[Lookup Trace] Open Food Facts error for {code_variant}: {e}")
 
-                # --- STAGE 2: Try Open Beauty Facts API (Cosmetics & Personal Care) ---
-                if not product_name:
-                    try:
-                        url = f"https://world.openbeautyfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
-                        response = session.get(url, timeout=3)
-                        if response.status_code == 200:
-                            data = response.json()
-                            if data.get("status") == 1:
-                                product = data.get("product", {})
-                                prod_name = product.get("product_name") or product.get("generic_name") or product.get("product_name_en")
-                                if prod_name and prod_name.strip():
-                                    brand = product.get("brands")
-                                    product_name = f"{prod_name.strip()} ({brand.strip()})" if brand and brand.strip() else prod_name.strip()
-                                    source_database = "Open Beauty Facts"
-                                    break
-                    except Exception as e:
-                        print(f"[Lookup Trace] Open Beauty Facts error for {code_variant}: {e}")
-
-                # --- STAGE 3: Try Open Pet Food Facts API (Pet Foods & Supplies) ---
+                # --- STAGE 2: Try Open Pet Food Facts API (Pet Foods & Supplies) ---
                 if not product_name:
                     try:
                         url = f"https://world.openpetfoodfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
@@ -479,118 +461,6 @@ class BarcodeLookupManager:
                                     break
                     except Exception as e:
                         print(f"[Lookup Trace] Open Pet Food Facts error for {code_variant}: {e}")
-
-                # --- STAGE 4: Try Open Products Facts API (Miscellaneous consumer goods) ---
-                if not product_name:
-                    try:
-                        url = f"https://world.openproductsfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
-                        response = session.get(url, timeout=3)
-                        if response.status_code == 200:
-                            data = response.json()
-                            if data.get("status") == 1:
-                                product = data.get("product", {})
-                                prod_name = product.get("product_name") or product.get("generic_name") or product.get("product_name_en")
-                                if prod_name and prod_name.strip():
-                                    brand = product.get("brands")
-                                    product_name = f"{prod_name.strip()} ({brand.strip()})" if brand and brand.strip() else prod_name.strip()
-                                    source_database = "Open Products Facts"
-                                    break
-                    except Exception as e:
-                        print(f"[Lookup Trace] Open Products Facts error for {code_variant}: {e}")
-
-                # --- STAGE 5: Try Open Library API (Books, ISBN barcode lookup) ---
-                if not product_name:
-                    try:
-                        url = f"https://openlibrary.org/api/books?bibkeys=ISBN:{code_variant}&format=json&jscmd=data"
-                        response = session.get(url, timeout=3)
-                        if response.status_code == 200:
-                            data = response.json()
-                            key = f"ISBN:{code_variant}"
-                            if key in data:
-                                book = data[key]
-                                title = book.get("title")
-                                if title:
-                                    authors_list = book.get("authors", [])
-                                    authors = ", ".join(a.get("name") for a in authors_list if a.get("name"))
-                                    product_name = f"{title} by {authors}" if authors else title
-                                    source_database = "Open Library"
-                                    break
-                    except Exception as e:
-                        print(f"[Lookup Trace] Open Library error for {code_variant}: {e}")
-
-                # --- STAGE 6: Try UPCitemdb Trial API (General retail products: Electronics, Retail, Apparel) ---
-                if not product_name:
-                    try:
-                        url = f"https://api.upcitemdb.com/prod/trial/lookup?upc={code_variant}"
-                        response = session.get(url, timeout=3)
-                        if response.status_code == 200:
-                            data = response.json()
-                            if data.get("code") == "OK" and data.get("total", 0) > 0:
-                                items = data.get("items", [])
-                                if items:
-                                    item = items[0]
-                                    title = item.get("title")
-                                    brand = item.get("brand")
-                                    if title and title.strip():
-                                        product_name = f"{title.strip()} ({brand.strip()})" if brand and brand.strip() else title.strip()
-                                        source_database = "UPCitemdb"
-                                        break
-                    except Exception as e:
-                        print(f"[Lookup Trace] UPCitemdb error for {code_variant}: {e}")
-
-                # --- STAGE 7: Try DuckDuckGo HTML Search Scraper (Global fallback for any indexed barcode) ---
-                if not product_name:
-                    try:
-                        url = f"https://html.duckduckgo.com/html/?q={code_variant}"
-                        response = session.get(url, timeout=4)
-                        if response.status_code == 200:
-                            titles = re.findall(r'<a[^>]*class="result__a"[^>]*>(.*?)</a>', response.text, re.DOTALL)
-                            snippets = re.findall(r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>', response.text, re.DOTALL)
-                            
-                            ignore_keywords = [
-                                "barcode lookup", "upc lookup", "ean lookup", "barcode search", 
-                                "upc search", "ean search", "barcode database", "product database",
-                                "search by barcode", "what is this barcode", "barcode detail", "lookup barcode",
-                                "barcode locator", "ean-db"
-                            ]
-                            
-                            candidates = []
-                            
-                            for title, snippet in zip(titles, snippets):
-                                clean_title = re.sub(r'<[^>]+>', '', title).strip()
-                                clean_title = html_parser.unescape(clean_title)
-                                
-                                clean_snippet = re.sub(r'<[^>]+>', '', snippet).strip()
-                                clean_snippet = html_parser.unescape(clean_snippet)
-                                
-                                title_lower = clean_title.lower()
-                                if any(kw in title_lower for kw in ignore_keywords):
-                                    continue
-                                    
-                                suffixes_to_remove = [
-                                    " - eBay", " | eBay", " - Amazon", " | Amazon", " - Walmart", " | Walmart",
-                                    " - Flipkart", " | Flipkart", " - BigBasket", " | BigBasket"
-                                ]
-                                for suffix in suffixes_to_remove:
-                                    if clean_title.endswith(suffix):
-                                        clean_title = clean_title[:-len(suffix)]
-                                    elif clean_title.lower().endswith(suffix.lower()):
-                                        clean_title = clean_title[:-len(suffix)]
-                                        
-                                clean_title = re.sub(r'\s+', ' ', clean_title).strip()
-                                
-                                if code_variant in clean_title or code_variant in clean_snippet:
-                                    candidates.append((0, clean_title))
-                                elif len(clean_title) > 5 and not clean_title.replace('.', '', 1).isdigit():
-                                    candidates.append((1, clean_title))
-                                    
-                            if candidates:
-                                candidates.sort(key=lambda x: x[0])
-                                product_name = candidates[0][1]
-                                source_database = "Web Search (DDG)"
-                                break
-                    except Exception as e:
-                        print(f"[Lookup Trace] DuckDuckGo fallback error for {code_variant}: {e}")
 
             # --- Final Status Allocation ---
             if product_name:
@@ -775,7 +645,7 @@ def draw_banner(frame, text, top, height, text_color, alpha=0.65):
 def main():
     print("====================================================")
     print("   Webcam Barcode & QR Code Scanner starting...     ")
-    print("   7-Stage Cascading Lookups: OFF/OBF/OPF/OPPF/OL/UPC/Web ")
+    print("   2-Stage Cascading Lookups: Open Food Facts / Open Pet Food Facts ")
     print("====================================================")
     print(f"Decoder Engine: {'Pyzbar (Primary)' if PYZBAR_AVAILABLE else 'OpenCV (Fallback)'}")
     print("Hold the product so its barcode sits inside the on-screen box.")

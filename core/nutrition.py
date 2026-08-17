@@ -116,8 +116,7 @@ def has_nutrition(fields):
     """
     True when at least one nutriment value is present.
 
-    Products resolved by Open Library, UPCitemdb or the web-search fallback carry
-    no nutrition at all, so views use this to decide between rendering a nutrition
-    panel and showing a "no nutrition data" state.
+    Products resolved by non-food databases carry no nutrition at all, so views
+    use this to decide between rendering a nutrition panel and showing a "no nutrition data" state.
     """
     return any(fields.get(column) is not None for column in NUTRIMENT_KEYS)
