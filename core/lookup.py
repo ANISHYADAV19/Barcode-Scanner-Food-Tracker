@@ -9,9 +9,12 @@ web API can call it directly per request while the desktop app wraps it in
 Cascade order (first hit wins):
   1.   Open Food Facts                                 -- full nutrition
   2.   Open Pet Food Facts                             -- full nutrition
+  3.   Open Products Facts                             -- full nutrition (if present)
+  4.   USDA FoodData Central                           -- full nutrition
 """
 
 import html as html_parser
+import os
 import queue
 import re
 import threading
@@ -154,7 +157,29 @@ def _try_off_family(code, session, host, label):
     return _result(code, name, product.get("brands"), label, nutrition.parse_off_product(product))
 
 
+def _try_usda_fdc(code, session):
+    """
+    Queries USDA FoodData Central search endpoint (using query=UPC).
+    Requires a data.gov API key, falling back to public DEMO_KEY.
+    """
+    api_key = os.environ.get("USDA_API_KEY", "DEMO_KEY")
+    url = f"https://api.nal.usda.gov/fdc/v1/foods/search?query={code}&pageSize=5&api_key={api_key}"
+    response = session.get(url, timeout=API_TIMEOUT)
+    if response.status_code != 200:
+        return None
 
+    data = response.json()
+    foods = data.get("foods") or []
+    if not foods:
+        return None
+
+    food = foods[0]
+    description = (food.get("description") or "").strip()
+    if not description or is_placeholder_name(description):
+        return None
+
+    brand = food.get("brandOwner") or food.get("brandName")
+    return _result(code, description, brand, "USDA FoodData Central", nutrition.parse_usda_product(food))
 
 
 def _build_stages(barcode):
@@ -162,6 +187,8 @@ def _build_stages(barcode):
     return [
         ("Open Food Facts", lambda code, s: _try_off_family(code, s, "world.openfoodfacts.org", "Open Food Facts")),
         ("Open Pet Food Facts", lambda code, s: _try_off_family(code, s, "world.openpetfoodfacts.org", "Open Pet Food Facts")),
+        ("Open Products Facts", lambda code, s: _try_off_family(code, s, "world.openproductsfacts.org", "Open Products Facts")),
+        ("USDA FoodData Central", _try_usda_fdc),
     ]
 
 

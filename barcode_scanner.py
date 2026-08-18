@@ -6,6 +6,7 @@ import queue
 import time
 import re
 import html as html_parser
+import os
 from datetime import datetime
 
 # --- Scanner viewfinder configuration ---
@@ -462,6 +463,44 @@ class BarcodeLookupManager:
                     except Exception as e:
                         print(f"[Lookup Trace] Open Pet Food Facts error for {code_variant}: {e}")
 
+                # --- STAGE 3: Try Open Products Facts API (Miscellaneous consumer goods) ---
+                if not product_name:
+                    try:
+                        url = f"https://world.openproductsfacts.org/api/v2/product/{code_variant}.json?fields=product_name,brands,generic_name"
+                        response = session.get(url, timeout=3)
+                        if response.status_code == 200:
+                            data = response.json()
+                            if data.get("status") == 1:
+                                product = data.get("product", {})
+                                prod_name = product.get("product_name") or product.get("generic_name") or product.get("product_name_en")
+                                if prod_name and prod_name.strip():
+                                    brand = product.get("brands")
+                                    product_name = f"{prod_name.strip()} ({brand.strip()})" if brand and brand.strip() else prod_name.strip()
+                                    source_database = "Open Products Facts"
+                                    break
+                    except Exception as e:
+                        print(f"[Lookup Trace] Open Products Facts error for {code_variant}: {e}")
+
+                # --- STAGE 4: Try USDA FoodData Central API (Groceries & Foods) ---
+                if not product_name:
+                    try:
+                        api_key = os.environ.get("USDA_API_KEY", "DEMO_KEY")
+                        url = f"https://api.nal.usda.gov/fdc/v1/foods/search?query={code_variant}&pageSize=5&api_key={api_key}"
+                        response = session.get(url, timeout=3)
+                        if response.status_code == 200:
+                            data = response.json()
+                            foods = data.get("foods") or []
+                            if foods:
+                                food = foods[0]
+                                desc = food.get("description")
+                                if desc and desc.strip():
+                                    brand = food.get("brandOwner") or food.get("brandName")
+                                    product_name = f"{desc.strip()} ({brand.strip()})" if brand and brand.strip() else desc.strip()
+                                    source_database = "USDA FoodData Central"
+                                    break
+                    except Exception as e:
+                        print(f"[Lookup Trace] USDA FDC error for {code_variant}: {e}")
+
             # --- Final Status Allocation ---
             if product_name:
                 self._update_cache_and_log(barcode, "found", product_name, source_database)
@@ -645,7 +684,7 @@ def draw_banner(frame, text, top, height, text_color, alpha=0.65):
 def main():
     print("====================================================")
     print("   Webcam Barcode & QR Code Scanner starting...     ")
-    print("   2-Stage Cascading Lookups: Open Food Facts / Open Pet Food Facts ")
+    print("   4-Stage Cascading Lookups: Open Food Facts / Open Pet Food Facts / Open Products Facts / USDA FoodData Central ")
     print("====================================================")
     print(f"Decoder Engine: {'Pyzbar (Primary)' if PYZBAR_AVAILABLE else 'OpenCV (Fallback)'}")
     print("Hold the product so its barcode sits inside the on-screen box.")

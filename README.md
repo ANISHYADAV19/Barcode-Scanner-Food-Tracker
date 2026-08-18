@@ -1,6 +1,6 @@
 # Smart Webcam Barcode & QR Code Reader 🏷️🔍
 
-A real-time, multi-threaded Python application that uses your webcam to detect barcodes and QR codes, looks up product details instantly using a **2-stage cascading multi-API architecture**, displays product names live on the camera overlay, and logs all scans locally.
+A real-time, multi-threaded Python application that uses your webcam to detect barcodes and QR codes, looks up product details instantly using a **4-stage cascading multi-API architecture**, displays product names live on the camera overlay, and logs all scans locally.
 
 Designed with a **non-blocking asynchronous architecture**, the video feed remains buttery-smooth (30+ FPS) even while network lookups are being made in the background.
 
@@ -11,9 +11,11 @@ Designed with a **non-blocking asynchronous architecture**, the video feed remai
 *   📷 **Real-time Detection**: Captures and processes webcam frames instantly using OpenCV.
 *   🎯 **Dedicated Scan Window**: A centred targeting rectangle marks exactly where to hold the product. Everything outside it is dimmed and **not decoded at all**, so background clutter can never produce a false read — and because only the small window is processed, each frame is decoded at a much higher effective zoom, which is what lets small printed barcodes resolve. Resizable live with `+`/`-`.
 *   ⚡ **Zero-Lag Interface**: Multi-threaded request worker scans and queries in the background, preventing video frame stutter.
-*   🌐 **2-Stage Cascading Multi-API Lookup**: Queries databases sequentially to resolve food and pet items:
+*   🌐 **4-Stage Cascading Multi-API Lookup**: Queries databases sequentially to resolve food, pet items, and general consumer goods:
     1.  **Open Food Facts API**: For groceries and food products.
     2.  **Open Pet Food Facts API**: For pet food, treats, and pet care products.
+    3.  **Open Products Facts API**: For miscellaneous consumer products (toys, games, stationery, etc.).
+    4.  **USDA FoodData Central API**: For US-branded food items and nutritional details.
 *   🎨 **Sleek Overlay HUD**: Automatically draws color-coded bounding boxes and semi-transparent info badges above barcodes based on API query status.
 *   💾 **Local File Logging**: Saves all scanned products to a structured log file `scanned_products.txt` with timestamps and database source info.
 *   ⚙️ **Dual-Engine Parser**: Uses `pyzbar` as primary engine, with a automatic, seamless fallback to OpenCV's built-in `BarcodeDetector`/`QRCodeDetector` if system C-libraries are missing.
@@ -33,7 +35,9 @@ graph TD
     E -->|5. Cascading Query| F{DB Cascade}
     F -->|Stage 1| G[Open Food Facts]
     F -->|Stage 2| H[Open Pet Food Facts]
-    G & H -->|6. JSON Response| E
+    F -->|Stage 3| I[Open Products Facts]
+    F -->|Stage 4| J[USDA FoodData Central]
+    G & H & I & J -->|6. JSON Response| E
     E -->|7. Update Cache & Write Log| N[(scanned_products.txt)]
     C -->|8. Render Color-coded overlays| O[Display Window]
 ```
@@ -114,7 +118,7 @@ The rectangle is **colour-coded** by lookup status, and the bottom bar holds the
 *   ⚪ **Grey** — Idle, waiting for a code. A sweeping line shows the decoder is live.
 *   🟡 **Yellow** — Lookup pending (querying the cascading APIs in the background).
 *   🟢 **Green** — Product found and resolved.
-*   🔴 **Red** — Not found in either of the 2 sources.
+*   🔴 **Red** — Not found in any of the 4 sources.
 *   🟠 **Orange** — API / network error.
 
 > **Tip:** If a barcode won't read, shrink the window with `-` so the code fills more of it — that raises the zoom the decoder works at. Codes read best when they span most of the box width. Press `F` if you'd rather scan freely without the window.
