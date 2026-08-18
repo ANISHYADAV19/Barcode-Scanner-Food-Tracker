@@ -4,6 +4,7 @@ let cameras = [];
 let currentCameraId = null;
 let isScanning = false;
 let hasHotSwapped = false;
+let hasInitializedDevices = false;
 
 let lastScannedBarcode = "";
 let lastScanTime = 0;
@@ -70,13 +71,20 @@ async function initializeCameraList() {
     return;
   }
 
+  await populateCameraDevices();
+  if (!hasInitializedDevices) {
+    addDefaultOptions();
+  }
+}
+
+async function populateCameraDevices() {
   try {
-    // Check if camera permission is available or already granted
+    if (typeof Html5Qrcode === "undefined") return;
     cameras = await Html5Qrcode.getCameras();
-    cameraSelect.innerHTML = "";
-    
     if (cameras && cameras.length > 0) {
-      // Add default constraints options linked directly to generic constraints for Safari/iOS compatibility
+      const prevVal = cameraSelect.value;
+      cameraSelect.innerHTML = "";
+      
       const defaultBackOpt = document.createElement("option");
       defaultBackOpt.value = "environment";
       defaultBackOpt.text = "Default Back Camera (Recommended)";
@@ -94,14 +102,18 @@ async function initializeCameraList() {
         cameraSelect.appendChild(option);
       });
       
-      cameraSelect.value = "environment";
-      currentCameraId = "environment";
-    } else {
-      addDefaultOptions();
+      // Restore the active camera selection
+      cameraSelect.value = prevVal;
+      currentCameraId = cameraSelect.value;
+
+      // Check if we have names/labels to mark device list as successfully initialized
+      const hasLabels = cameras.some(camera => camera.label);
+      if (hasLabels) {
+        hasInitializedDevices = true;
+      }
     }
-  } catch (err) {
-    console.warn("Could not retrieve camera list initially (this is normal before permission is granted):", err);
-    addDefaultOptions();
+  } catch (e) {
+    console.warn("Could not populate camera devices:", e);
   }
 }
 
@@ -132,6 +144,21 @@ async function toggleCamera() {
       alert("Please select a camera first.");
       return;
     }
+
+    // The first time, if we haven't loaded labels yet, request permissions to populate them
+    if (!hasInitializedDevices) {
+      try {
+        // Request temporary stream to trigger browser permissions dialog
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        // Release the camera lock immediately
+        stream.getTracks().forEach(track => track.stop());
+        // Enumerate devices with labels now that permission is granted
+        await populateCameraDevices();
+      } catch (err) {
+        console.warn("Permission request failed or denied:", err);
+      }
+    }
+
     await startScanning();
   }
 }
@@ -273,9 +300,6 @@ async function startScanning() {
     // Dynamically adjust aspect ratio to match webcam
     adjustViewfinderAspectRatio();
 
-    // Refresh camera device names once permission is granted and camera is active
-    setTimeout(refreshCameraNamesAfterPermission, 500);
-
   } catch (startErr) {
     console.warn("Failed to start with primary constraints. Initiating fallback 1 (no custom resolution):", startErr);
     
@@ -312,8 +336,6 @@ async function startScanning() {
       // Dynamically adjust aspect ratio to match webcam fallback
       adjustViewfinderAspectRatio();
 
-      setTimeout(refreshCameraNamesAfterPermission, 500);
-
     } catch (fallbackErr) {
       console.warn("Failed fallback 1. Initiating ultimate fallback (no videoConstraints override in config):", fallbackErr);
       
@@ -341,8 +363,6 @@ async function startScanning() {
         // Dynamically adjust aspect ratio to match webcam fallback
         adjustViewfinderAspectRatio();
 
-        setTimeout(refreshCameraNamesAfterPermission, 500);
-
       } catch (ultimateErr) {
         console.error("Failed all methods to start scanning", ultimateErr);
         alert(`Error starting camera: ${ultimateErr.message || ultimateErr}`);
@@ -352,42 +372,11 @@ async function startScanning() {
   }
 }
 
-async function refreshCameraNamesAfterPermission() {
-  try {
-    if (typeof Html5Qrcode === "undefined") return;
-    const freshCameras = await Html5Qrcode.getCameras();
-    if (freshCameras && freshCameras.length > 0) {
-      const prevVal = cameraSelect.value;
-      cameraSelect.innerHTML = "";
-      
-      const defaultBackOpt = document.createElement("option");
-      defaultBackOpt.value = "environment";
-      defaultBackOpt.text = "Default Back Camera (Recommended)";
-      cameraSelect.appendChild(defaultBackOpt);
-
-      const defaultFrontOpt = document.createElement("option");
-      defaultFrontOpt.value = "user";
-      defaultFrontOpt.text = "Default Front Camera";
-      cameraSelect.appendChild(defaultFrontOpt);
-
-      freshCameras.forEach((camera, index) => {
-        const option = document.createElement("option");
-        option.value = camera.id;
-        option.text = camera.label || `Camera ${index + 1}`;
-        cameraSelect.appendChild(option);
-      });
-      
-      // Restore the active camera selection
-      cameraSelect.value = prevVal;
-      currentCameraId = cameraSelect.value;
-    }
-  } catch (e) {
-    console.warn("Could not refresh camera names:", e);
-  }
-}
-
 async function stopScanning() {
-  if (html5QrCode && isScanning) {
+  if (!isScanning) return;
+  isScanning = false;
+
+  if (html5QrCode) {
     try {
       await html5QrCode.stop();
     } catch (err) {
@@ -405,11 +394,16 @@ async function stopScanning() {
   toggleCameraBtn.classList.remove("btn-secondary");
   toggleCameraBtn.classList.add("btn-primary");
   viewfinderOverlay.style.display = "none";
-  isScanning = false;
+
+  // Reset scan state on stop to allow immediate scan upon restart
+  lastScannedBarcode = "";
+  lastScanTime = 0;
 }
 
 // Callback when barcode is detected by browser library
 function onBarcodeDetected(decodedText, decodedResult) {
+  if (!isScanning) return;
+
   const now = Date.now();
   const format = decodedResult?.result?.format?.formatName || "BARCODE";
   
@@ -425,6 +419,9 @@ function onBarcodeDetected(decodedText, decodedResult) {
   
   // Play subtle scan beep sound (synthesized client side)
   playBeep();
+
+  // Stop camera automatically after scanning a product
+  stopScanning();
 
   // Perform backend lookup
   performLookup(decodedText);
