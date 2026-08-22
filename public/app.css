@@ -186,6 +186,16 @@ body {
   margin-bottom: 0.5rem;
 }
 
+.logo-image {
+  height: 2.5rem;
+  width: auto;
+  display: block;
+}
+
+:root[data-theme="dark"] .logo-image {
+  filter: invert(0.9) hue-rotate(180deg);
+}
+
 .logo-icon {
   width: 2.25rem;
   height: 2.25rem;
@@ -1214,13 +1224,8 @@ body {
     padding: 1.25rem 1rem 0.75rem;
   }
   
-  .logo h1 {
-    font-size: 1.65rem;
-  }
-  
-  .logo-icon {
-    width: 1.75rem;
-    height: 1.75rem;
+  .logo-image {
+    height: 1.85rem;
   }
 
   .app-container {
